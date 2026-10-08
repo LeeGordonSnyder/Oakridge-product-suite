@@ -9,16 +9,22 @@ window.addEventListener("offline", () => setOffline(true));
 
 let refreshing = null;
 
+function warnUnauthorized() {
+  toast("The sheet rejected this phone's access key — update it in Settings.", true);
+}
+
 // Re-pulls every shared sheet and re-renders whatever's open.
+// Resolves to { ok, unauthorized }.
 function refreshSharedData() {
   if (refreshing) return refreshing;
   const btn = document.getElementById("refresh-btn");
   btn.classList.add("spinning");
   refreshing = loadAllShared()
-    .then((ok) => {
+    .then((result) => {
       refreshCurrentView();
-      if (!ok) toast("Couldn't reach the sheet — showing what's saved on this phone.", true);
-      return ok;
+      if (result.unauthorized) warnUnauthorized();
+      else if (!result.ok) toast("Couldn't reach the sheet — showing what's saved on this phone.", true);
+      return result;
     })
     .finally(() => {
       btn.classList.remove("spinning");
@@ -39,7 +45,36 @@ function registerServiceWorker() {
   document.getElementById("update-reload-btn").addEventListener("click", () => window.location.reload());
 }
 
-document.addEventListener("DOMContentLoaded", async () => {
+// Waits for the first full pull, but never indefinitely: after a few
+// seconds the person can carry on with what's already on the phone, and
+// the pull keeps going in the background and refreshes the view when done.
+const BOOT_SKIP_AFTER_MS = 6000;
+
+function initialLoad() {
+  const overlay = document.getElementById("boot-loading");
+  const skip = document.getElementById("boot-skip");
+  overlay.hidden = false;
+  skip.hidden = true;
+  const skipTimer = setTimeout(() => (skip.hidden = false), BOOT_SKIP_AFTER_MS);
+
+  const load = loadAllShared();
+  const skipped = new Promise((resolve) => skip.addEventListener("click", () => resolve("skipped"), { once: true }));
+
+  return Promise.race([load, skipped]).then((first) => {
+    clearTimeout(skipTimer);
+    overlay.hidden = true;
+    if (first === "skipped") {
+      load.then((result) => {
+        refreshCurrentView();
+        if (result.unauthorized) warnUnauthorized();
+      });
+      return null;
+    }
+    return first;
+  });
+}
+
+document.addEventListener("DOMContentLoaded", () => {
   initScannerModal();
   initChangeUser();
   initSettings();
@@ -47,14 +82,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   setOffline(!navigator.onLine);
   registerServiceWorker();
 
-  // The roster lives in the sheet, so fetch it before the gate renders
-  // (falls back to whatever's cached, or the built-in list).
-  await loadSharedStaffInitials();
-
   initLoginGate(async () => {
-    document.getElementById("boot-loading").hidden = false;
-    await loadAllShared();
-    document.getElementById("boot-loading").hidden = true;
+    const result = await initialLoad();
 
     // Each view initializes independently — one view tripping over odd
     // data must not take the rest of the app down with it.
@@ -69,5 +98,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     window.addEventListener("hashchange", applyRoute);
     document.getElementById("app").hidden = false;
     applyRoute();
+
+    if (result && result.unauthorized) {
+      warnUnauthorized();
+      openSettings();
+      setStatus("settings-status", "The sheet rejected this access key. Paste the correct one and tap Save & sync.", true);
+    } else if (result && !result.ok) {
+      toast("Couldn't reach the sheet — showing what's saved on this phone.", true);
+    }
   });
 });

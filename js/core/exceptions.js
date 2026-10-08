@@ -166,10 +166,22 @@ function computeExceptions() {
     });
   }
 
+  // --- Access key rejected ---
+  if (sheetAuthRejected) {
+    out.push({
+      key: "auth",
+      severity: "high",
+      module: "settings",
+      title: "The sheet rejected this phone's access key",
+      detail: "Nothing syncs until it's fixed. Paste the correct key in Settings.",
+      action: { label: "Open Settings", route: "settings" },
+    });
+  }
+
   // --- Data freshness ---
   const lastSync = loadJSON(STORE.lastSync, null);
   const hours = lastSync ? (Date.now() - new Date(lastSync)) / 3600000 : Infinity;
-  if (hours > SHEET_STALE_HOURS) {
+  if (!sheetAuthRejected && hours > SHEET_STALE_HOURS) {
     out.push({
       key: "stale-data",
       severity: "info",

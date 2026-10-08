@@ -3,7 +3,7 @@
 /* ---------- Settings, roster & feedback ----------
    Everything administrative in one modal, reachable from any screen. */
 
-const APP_VERSION = "2.0.0-phase1";
+const APP_VERSION = "2.0.1-phase1";
 
 function openSettings() {
   document.getElementById("settings-url").value = getWebhookUrl();
@@ -33,8 +33,12 @@ function saveSettings() {
   setWebhookUrl(url);
   setApiKey(key);
   setStatus("settings-status", "Saved. Pulling from the sheet…", false);
-  refreshSharedData().then((ok) =>
-    setStatus("settings-status", ok ? "Saved and synced." : "Saved, but couldn't reach the sheet with these settings.", !ok)
+  refreshSharedData().then(({ ok, unauthorized }) =>
+    setStatus(
+      "settings-status",
+      ok ? "Saved and synced." : unauthorized ? "Saved, but the sheet rejected this access key." : "Saved, but couldn't reach the sheet.",
+      !ok
+    )
   );
 }
 

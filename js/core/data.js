@@ -1,9 +1,14 @@
 "use strict";
 
 /* ---------- Pulling shared data from the sheet ----------
-   Each loader returns true on success, false when the sheet couldn't be
-   reached. On failure, whatever's already cached locally stands — reads
-   never wipe local data. */
+   Each loader returns true on success, "unauthorized" when the backend
+   rejected the access key, and false when the sheet couldn't be reached.
+   On failure, whatever's already cached locally stands — reads never wipe
+   local data. */
+
+// Set by the last full pull: true when the backend rejected the access
+// key, so Home and Settings can say so instead of a vague "offline".
+let sheetAuthRejected = false;
 
 async function loadSharedStaffInitials() {
   try {
@@ -12,7 +17,7 @@ async function loadSharedStaffInitials() {
     if (rows.length) saveJSON(STORE.staffInitials, rows.map(String));
     return true;
   } catch (e) {
-    return false;
+    return isUnauthorized(e) ? "unauthorized" : false;
   }
 }
 
@@ -28,7 +33,7 @@ async function loadSharedProductMaster() {
     if (rows.length) upsertProductMaster(rows.map(sheetRowToMasterItem));
     return true;
   } catch (e) {
-    return false;
+    return isUnauthorized(e) ? "unauthorized" : false;
   }
 }
 
@@ -65,7 +70,7 @@ async function loadSharedAuditLog() {
     }
     return true;
   } catch (e) {
-    return false;
+    return isUnauthorized(e) ? "unauthorized" : false;
   }
 }
 
@@ -77,7 +82,7 @@ async function loadSharedConsolMaster() {
     saveJSON(STORE.consolMaster, rows.map(sheetRowToConsolItem));
     return true;
   } catch (e) {
-    return false;
+    return isUnauthorized(e) ? "unauthorized" : false;
   }
 }
 
@@ -134,7 +139,7 @@ async function loadSharedConsolLog() {
     }
     return true;
   } catch (e) {
-    return false;
+    return isUnauthorized(e) ? "unauthorized" : false;
   }
 }
 
@@ -145,7 +150,7 @@ async function loadSharedReceivingMaster() {
     saveJSON(STORE.receivingMaster, rows.map(sheetRowToReceivingItem));
     return true;
   } catch (e) {
-    return false;
+    return isUnauthorized(e) ? "unauthorized" : false;
   }
 }
 
@@ -159,12 +164,13 @@ async function loadSharedFloorRestock() {
     );
     return true;
   } catch (e) {
-    return false;
+    return isUnauthorized(e) ? "unauthorized" : false;
   }
 }
 
 // Pulls every shared sheet at once. Records when the last fully
 // successful pull happened so Home can say how fresh its numbers are.
+// Resolves to { ok, unauthorized }.
 async function loadAllShared() {
   const results = await Promise.all([
     loadSharedProductMaster(),
@@ -174,7 +180,8 @@ async function loadAllShared() {
     loadSharedReceivingMaster(),
     loadSharedFloorRestock(),
   ]);
-  const ok = results.every(Boolean);
+  const ok = results.every((r) => r === true);
+  sheetAuthRejected = results.includes("unauthorized");
   if (ok) saveJSON(STORE.lastSync, new Date().toISOString());
-  return ok;
+  return { ok, unauthorized: sheetAuthRejected };
 }

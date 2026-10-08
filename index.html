@@ -18,7 +18,7 @@
   <img src="icons/icon-192.png" alt="" class="topbar-logo">
   <h1>Oakridge Product Suite
     <!-- Bump with sw.js CACHE_VERSION on every shipped change. -->
-    <span class="header-version" id="header-version">v2.0 · rebuild</span>
+    <span class="header-version" id="header-version">v2.0.1 · rebuild</span>
   </h1>
   <span id="offline-badge" class="badge" hidden>Offline</span>
   <div class="topbar-actions">
@@ -321,6 +321,7 @@
   <div class="spinner" aria-hidden="true"></div>
   <p>Pulling the latest from the sheet…</p>
   <p class="hint">Can take up to ~10 seconds on first sign-in.</p>
+  <button type="button" id="boot-skip" class="btn secondary" hidden>Continue with what's saved on this phone</button>
 </div>
 
 <div id="toast" class="toast" role="status" hidden></div>
@@ -329,7 +330,17 @@
   <div class="modal-inner">
     <img src="icons/icon-192.png" alt="" class="login-logo">
     <h2>Who's working?</h2>
-    <p class="hint">Every action today is stamped with these initials.</p>
+
+    <div id="login-key-section" class="login-key">
+      <label for="login-key">Access key
+        <input id="login-key" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste the store's access key">
+      </label>
+      <p class="hint">Needed once per phone — ask a lead if you don't have it.</p>
+      <p id="login-key-status" class="status-msg" role="status"></p>
+    </div>
+    <p id="login-key-saved" class="hint" hidden>🔑 Access key saved on this phone · <button type="button" id="login-key-change" class="link-btn">Change</button></p>
+
+    <p class="hint">Every action today is stamped with your initials.</p>
     <select id="login-select" aria-label="Your initials"></select>
     <p id="login-status" class="status-msg" role="status"></p>
     <button type="button" id="login-continue" class="btn primary block">Continue</button>

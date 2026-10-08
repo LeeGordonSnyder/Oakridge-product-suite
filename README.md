@@ -49,8 +49,11 @@ don't have to redeploy anything:
    **public**, same as the original.
 2. Open `https://<username>.github.io/Oakridge-product-suite/` in **Safari**,
    then Share → **Add to Home Screen**.
-3. If the phone already runs the original app, the access key carries over
-   automatically. If not, set the Sheet URL and Access Key under ⚙︎ Settings.
+3. The first sign-in on each phone asks for the **access key** (the
+   `ACCESS_KEY` Script Property). It's checked against the sheet before it's
+   saved. iOS keeps home-screen apps' storage separate from Safari, so expect
+   to enter it once on each installed icon, even if the original app already
+   has it. It can be changed later under ⚙︎ Settings.
 
 After each shipped change, bump `CACHE_VERSION` in `sw.js` and the version
 label in `index.html`. Phones then show the "A new version is ready" banner.
