@@ -189,7 +189,7 @@ async function importCatalogPaste(btn) {
     status,
     shared === parsed.length
       ? `Added ${result.added}, updated ${result.updated}, and shared all ${shared} with the sheet.`
-      : `Added ${result.added}, updated ${result.updated} on this phone. Only ${shared} of ${parsed.length} reached the sheet — import again to finish sharing.`,
+      : `Added ${result.added}, updated ${result.updated} on this device. Only ${shared} of ${parsed.length} reached the sheet — import again to finish sharing.`,
     shared !== parsed.length
   );
 }

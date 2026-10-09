@@ -17,6 +17,18 @@ function getApiKey() {
   return loadString(STORE.apiKey, LEGACY_KEYS.apiKey);
 }
 
+// "own" = entered in this app, "legacy" = borrowed (read-only) from the
+// original app in this same browser, "" = no key on this device at all.
+function apiKeySource() {
+  try {
+    if (localStorage.getItem(STORE.apiKey)) return "own";
+    if (localStorage.getItem(LEGACY_KEYS.apiKey)) return "legacy";
+  } catch (e) {
+    // storage blocked — treat as no key
+  }
+  return "";
+}
+
 function setApiKey(key) {
   saveString(STORE.apiKey, key);
 }

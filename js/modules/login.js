@@ -43,6 +43,30 @@ function wireAddInitials(prefix, select) {
 function showLoginKeyField(show) {
   document.getElementById("login-key-section").hidden = !show;
   document.getElementById("login-key-saved").hidden = show;
+  document.getElementById("login-key-source").textContent =
+    apiKeySource() === "legacy" ? "Using the access key from the original app on this device" : "Access key saved on this device";
+}
+
+// The saved key (especially one borrowed from the original app) may be
+// stale. Check it quietly while the person picks their initials; if the
+// sheet rejects it, open the key field instead of letting them sign in to
+// an app that can't sync.
+async function recheckSavedKey(select) {
+  const key = getApiKey();
+  if (!key) return;
+  const result = await verifyApiKey(key);
+  if (result !== "unauthorized" || getApiKey() !== key) return;
+  const input = document.getElementById("login-key");
+  input.value = "";
+  showLoginKeyField(true);
+  setStatus(
+    "login-key-status",
+    apiKeySource() === "legacy"
+      ? "The key from the original app was rejected — paste the current one."
+      : "The saved key was rejected — paste the current one.",
+    true
+  );
+  refreshLoginRoster(select);
 }
 
 // Verifies whatever's typed in the key field. Resolves true when it's OK
@@ -103,11 +127,22 @@ function initLoginGate(onReady) {
   keyInput.addEventListener("change", async () => {
     if (keyInput.value.trim() && (await checkLoginKey())) refreshLoginRoster(select);
   });
+  // Change shows the current key (masked, with Show) so it's clear one is
+  // there; editing it and continuing re-verifies it.
   document.getElementById("login-key-change").addEventListener("click", () => {
-    keyInput.value = "";
+    keyInput.value = getApiKey();
+    keyInput.type = "password";
+    document.getElementById("login-key-show").textContent = "Show";
     showLoginKeyField(true);
     keyInput.focus();
+    keyInput.select();
   });
+  document.getElementById("login-key-show").addEventListener("click", (e) => {
+    const hidden = keyInput.type === "password";
+    keyInput.type = hidden ? "text" : "password";
+    e.currentTarget.textContent = hidden ? "Hide" : "Show";
+  });
+  recheckSavedKey(select);
 
   const continueBtn = document.getElementById("login-continue");
   continueBtn.addEventListener("click", () =>

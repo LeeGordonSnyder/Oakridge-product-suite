@@ -102,7 +102,7 @@ function computeExceptions() {
       severity: "medium",
       module: "counts",
       title: `${plural(unsynced.length, "count")} not saved to the sheet`,
-      detail: "Only on this phone until you tap Save to Sheet.",
+      detail: "Only on this device until you tap Save to Sheet.",
       action: { label: "Save now", route: "counts" },
     });
   }
@@ -161,7 +161,7 @@ function computeExceptions() {
       severity: "info",
       module: route.split("/")[0],
       title: `${plural(n, one, many)} staged in ${where}`,
-      detail: "Held on this phone — not on the sheet until you tap the update button.",
+      detail: "Held on this device — not on the sheet until you tap the update button.",
       action: { label: `Open ${where}`, route },
     });
   }
@@ -172,7 +172,7 @@ function computeExceptions() {
       key: "auth",
       severity: "high",
       module: "settings",
-      title: "The sheet rejected this phone's access key",
+      title: "The sheet rejected this device's access key",
       detail: "Nothing syncs until it's fixed. Paste the correct key in Settings.",
       action: { label: "Open Settings", route: "settings" },
     });

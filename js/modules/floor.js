@@ -376,7 +376,7 @@ async function commitCheckFloor(btn) {
     try {
       const { adds, decisions } = planCheckFloor(holding, loadRestock());
       // Carrier rows first, mirrored locally as each lands, so a failure
-      // partway leaves this phone matching the sheet.
+      // partway leaves this device matching the sheet.
       for (const a of adds) {
         await api.floorRestockAdd(a);
         const restock = loadRestock();

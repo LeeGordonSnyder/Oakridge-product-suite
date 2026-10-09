@@ -18,7 +18,7 @@
   <img src="icons/icon-192.png" alt="" class="topbar-logo">
   <h1>Oakridge Product Suite
     <!-- Bump with sw.js CACHE_VERSION on every shipped change. -->
-    <span class="header-version" id="header-version">v2.0.2 · rebuild</span>
+    <span class="header-version" id="header-version">v2.0.3 · rebuild</span>
   </h1>
   <span id="offline-badge" class="badge" hidden>Offline</span>
   <div class="topbar-actions">
@@ -321,7 +321,7 @@
   <div class="spinner" aria-hidden="true"></div>
   <p>Pulling the latest from the sheet…</p>
   <p class="hint">Can take up to ~10 seconds on first sign-in.</p>
-  <button type="button" id="boot-skip" class="btn secondary" hidden>Continue with what's saved on this phone</button>
+  <button type="button" id="boot-skip" class="btn secondary" hidden>Continue with what's saved on this device</button>
 </div>
 
 <div id="toast" class="toast" role="status" hidden></div>
@@ -333,12 +333,15 @@
 
     <div id="login-key-section" class="login-key">
       <label for="login-key">Access key
-        <input id="login-key" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste the store's access key">
+        <span class="key-row">
+          <input id="login-key" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste the store's access key">
+          <button type="button" id="login-key-show" class="btn secondary small">Show</button>
+        </span>
       </label>
-      <p class="hint">Needed once per phone — ask a lead if you don't have it.</p>
+      <p class="hint">Needed once per device — ask a lead if you don't have it.</p>
       <p id="login-key-status" class="status-msg" role="status"></p>
     </div>
-    <p id="login-key-saved" class="hint" hidden>🔑 Access key saved on this phone · <button type="button" id="login-key-change" class="link-btn">Change</button></p>
+    <p id="login-key-saved" class="hint" hidden>🔑 <span id="login-key-source">Access key saved on this device</span> · <button type="button" id="login-key-change" class="link-btn">Change</button></p>
 
     <p class="hint">Every action today is stamped with your initials.</p>
     <select id="login-select" aria-label="Your initials"></select>
@@ -380,7 +383,7 @@
     <label>Access key
       <input id="settings-key" type="password" autocomplete="off" spellcheck="false">
     </label>
-    <p class="hint">Same values as the original app. If this phone already had them set there, they're picked up automatically.</p>
+    <p class="hint">Same values as the original app. If this device already had them set there, they're picked up automatically.</p>
     <button type="button" id="settings-save-btn" class="btn primary block">Save &amp; sync</button>
     <p id="settings-status" class="status-msg" role="status"></p>
 

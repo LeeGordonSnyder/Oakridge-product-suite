@@ -76,7 +76,7 @@ async function saveAddBox() {
     await api.receivingImport(item);
     setStatus("recv-status", `Added ${barcode} (PO ${po}) and shared it with the sheet.`, false);
   } catch (e) {
-    setStatus("recv-status", `Added ${barcode} on this phone, but couldn't share it yet — check your connection.`, true);
+    setStatus("recv-status", `Added ${barcode} on this device, but couldn't share it yet — check your connection.`, true);
   }
 }
 
@@ -244,7 +244,7 @@ async function importReceivingPaste(btn) {
     status,
     shared
       ? `Added ${result.added}, updated ${result.updated}, and shared all ${parsed.length} with the sheet.`
-      : `Added ${result.added}, updated ${result.updated} on this phone. Couldn't share with the sheet — import again once connected.`,
+      : `Added ${result.added}, updated ${result.updated} on this device. Couldn't share with the sheet — import again once connected.`,
     !shared
   );
 }

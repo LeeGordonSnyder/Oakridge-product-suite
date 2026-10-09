@@ -10,7 +10,7 @@ window.addEventListener("offline", () => setOffline(true));
 let refreshing = null;
 
 function warnUnauthorized() {
-  toast("The sheet rejected this phone's access key — update it in Settings.", true);
+  toast("The sheet rejected this device's access key — update it in Settings.", true);
 }
 
 // Re-pulls every shared sheet and re-renders whatever's open.
@@ -23,7 +23,7 @@ function refreshSharedData() {
     .then((result) => {
       refreshCurrentView();
       if (result.unauthorized) warnUnauthorized();
-      else if (!result.ok) toast("Couldn't reach the sheet — showing what's saved on this phone.", true);
+      else if (!result.ok) toast("Couldn't reach the sheet — showing what's saved on this device.", true);
       return result;
     })
     .finally(() => {
@@ -104,7 +104,7 @@ document.addEventListener("DOMContentLoaded", () => {
       openSettings();
       setStatus("settings-status", "The sheet rejected this access key. Paste the correct one and tap Save & sync.", true);
     } else if (result && !result.ok) {
-      toast("Couldn't reach the sheet — showing what's saved on this phone.", true);
+      toast("Couldn't reach the sheet — showing what's saved on this device.", true);
     }
   });
 });

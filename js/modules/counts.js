@@ -97,7 +97,7 @@ async function saveCountNewProduct(btn) {
       await api.pushProduct(item);
       setStatus("count-status", "Added and shared with the catalog sheet.", false);
     } catch (e) {
-      setStatus("count-status", "Added on this phone, but couldn't share it yet — re-add or import it once you're connected.", true);
+      setStatus("count-status", "Added on this device, but couldn't share it yet — re-add or import it once you're connected.", true);
     }
   });
 }

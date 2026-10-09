@@ -569,6 +569,8 @@ label input, label select { margin-top: 4px; color: var(--text); font-weight: 40
 .modal.login select { margin: 14px 0 0; text-align: center; }
 .login-key { text-align: left; margin: 10px 0 4px; padding: 12px; border-radius: var(--radius-sm); background: var(--surface-2); border: 1px solid var(--border); }
 .login-key label { margin-top: 0; }
+.key-row { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+.key-row input { margin-top: 0; flex: 1; min-width: 0; }
 .boot-loading .btn { margin-top: 18px; }
 .login-logo { width: 72px; height: 72px; border-radius: 50%; margin-bottom: 8px; }
 .about { margin-top: 14px; font-size: 0.78rem; }
