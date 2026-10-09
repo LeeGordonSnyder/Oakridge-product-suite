@@ -5,10 +5,19 @@
    one sheet (FloorRestock), each line carrying the same progress strip:
    Check → Needed → Picked | Out of Stock → Restocked.
    Check Floor and Replen decisions stage in Holding and push on Update;
-   Restocked on the 86 Board pushes immediately, as before. */
+   Restocked on the 86 Board pushes immediately, as before.
+
+   Check Floor works per style + color, not per size: when something sells,
+   whoever's checking walks to that style on the floor and sees for
+   themselves which sizes are missing, so every sold size of the same
+   style/color collapses into one line. The sheet still keeps one row per
+   sold size (the backend and the original app depend on that), so a line's
+   decision is translated back into per-row decisions on Update — see
+   planCheckFloor(). Replen is grouped the same way for reading, but picking
+   stays per size, since that's what someone actually pulls from the back. */
 
 let floorSub = "check";
-let floorNeededTarget = null; // { sku, size } being sized in the Needed modal
+let floorNeededTarget = null; // group key being sized in the Needed modal
 let floorManualDescription = "";
 
 const FLOOR_SUBS = ["check", "replen", "86"];
@@ -23,30 +32,72 @@ function findRestockRow(restock, sku, size, predicate) {
   return restock.find((p) => p.sku === sku && p.size === size && predicate(p)) || null;
 }
 
-const floorHolding = {
-  check: {
-    key: STORE.checkFloorHolding,
-    has: (sku, size) => loadJSON(STORE.checkFloorHolding, []).some((h) => h.sku === sku && h.size === size),
-  },
-  replen: {
-    key: STORE.replenHolding,
-    has: (sku, size) => loadJSON(STORE.replenHolding, []).some((h) => h.sku === sku && h.size === size),
-  },
-};
+function floorGroupKey(item) {
+  return `${normalize(item.description)}|${normalize(item.color)}`;
+}
 
-function stageFloor(which, entry) {
-  const h = loadJSON(floorHolding[which].key, []);
-  if (h.some((x) => x.sku === entry.sku && x.size === entry.size)) return;
-  h.push(entry);
-  saveJSON(floorHolding[which].key, h);
+// Groups rows by style + color, keeping first-seen description/color text.
+function groupFloorRows(rows) {
+  const groups = new Map();
+  for (const row of rows) {
+    const key = floorGroupKey(row);
+    let g = groups.get(key);
+    if (!g) groups.set(key, (g = { key, description: row.description, color: row.color, rows: [], qtySold: 0 }));
+    g.rows.push(row);
+    g.qtySold += Number(row.qtySold) || 0;
+  }
+  return [...groups.values()].sort((a, b) => a.description.localeCompare(b.description) || a.color.localeCompare(b.color));
+}
+
+function checkFloorGroups(restock) {
+  return groupFloorRows(restock.filter((r) => !isFloorChecked(r)));
+}
+
+/* ---------- Holding ----------
+   Check Floor holding is one entry per style/color line:
+     { key, description, color, status, sizes }
+   Replen holding stays one entry per sized row: { sku, size, ..., action } */
+
+function loadCheckHolding() {
+  // Entries staged by the earlier per-size version carry sku/size instead
+  // of a group key — fold them into the line they belong to.
+  return loadJSON(STORE.checkFloorHolding, []).map((h) => (h.key ? h : { ...h, key: floorGroupKey(h) }));
+}
+
+function isCheckGroupHeld(key) {
+  return loadCheckHolding().some((h) => h.key === key);
+}
+
+function isReplenHeld(sku, size) {
+  return loadJSON(STORE.replenHolding, []).some((h) => h.sku === sku && h.size === size);
+}
+
+function stageCheckGroup(key, status, sizes) {
+  const group = checkFloorGroups(loadRestock()).find((g) => g.key === key);
+  if (!group || isCheckGroupHeld(key)) return;
+  const holding = loadCheckHolding();
+  holding.push({ key, description: group.description, color: group.color, status, sizes });
+  saveJSON(STORE.checkFloorHolding, holding);
   renderFloor();
 }
 
-function unstageFloor(which, sku, size) {
-  saveJSON(
-    floorHolding[which].key,
-    loadJSON(floorHolding[which].key, []).filter((h) => !(h.sku === sku && h.size === size))
-  );
+function stageReplenRow(entry) {
+  if (isReplenHeld(entry.sku, entry.size)) return;
+  const holding = loadJSON(STORE.replenHolding, []);
+  holding.push(entry);
+  saveJSON(STORE.replenHolding, holding);
+  renderFloor();
+}
+
+function unstageFloor(el) {
+  if (el.dataset.which === "check") {
+    saveJSON(STORE.checkFloorHolding, loadCheckHolding().filter((h) => h.key !== el.dataset.key));
+  } else {
+    saveJSON(
+      STORE.replenHolding,
+      loadJSON(STORE.replenHolding, []).filter((h) => !(h.sku === el.dataset.sku && h.size === el.dataset.size))
+    );
+  }
   renderFloor();
 }
 
@@ -82,21 +133,24 @@ function floorLine(item, buttons) {
 function holdingRows(which, rows, labelFn) {
   if (!rows.length) return `<p class="hint">Nothing staged.</p>`;
   return rows
-    .map(
-      (h) => `
+    .map((h) => {
+      const ids =
+        which === "check"
+          ? `data-key="${escapeHtml(h.key)}"`
+          : `data-sku="${escapeHtml(h.sku)}" data-size="${escapeHtml(h.size)}"`;
+      const sizeTag = which === "replen" && h.size ? ` <span class="size-tag">${escapeHtml(h.size)}</span>` : "";
+      return `
       <div class="list-row static">
-        <span>${escapeHtml(h.description)}${h.color ? " — " + escapeHtml(h.color) : ""} ${h.size ? `<span class="size-tag">${escapeHtml(h.size)}</span>` : ""}<br>
+        <span>${escapeHtml(h.description)}${h.color ? " — " + escapeHtml(h.color) : ""}${sizeTag}<br>
           <span class="hint">${escapeHtml(labelFn(h))}</span></span>
-        <button type="button" class="btn secondary small" data-action="floor-unstage" data-which="${which}" data-sku="${escapeHtml(
-        h.sku
-      )}" data-size="${escapeHtml(h.size)}">Remove</button>
-      </div>`
-    )
+        <button type="button" class="btn secondary small" data-action="floor-unstage" data-which="${which}" ${ids}>Remove</button>
+      </div>`;
+    })
     .join("");
 }
 
 function renderFloorCounts(restock) {
-  const nCheck = restock.filter((i) => !isFloorChecked(i)).length;
+  const nCheck = checkFloorGroups(restock).length;
   const nReplen = restock.filter(isFloorNeeded).length;
   const n86 = restock.filter(isFloorOn86).length;
   document.getElementById("floor-n-check").textContent = nCheck || "";
@@ -119,7 +173,7 @@ function renderFloorCounts(restock) {
 }
 
 function renderCheckPanel(restock) {
-  const holding = loadJSON(STORE.checkFloorHolding, []);
+  const holding = loadCheckHolding();
   document.getElementById("floor-check-holding-count").textContent = holding.length ? `${holding.length} staged` : "";
   document.getElementById("floor-check-update").disabled = !holding.length;
   document.getElementById("floor-check-holding").innerHTML = holdingRows("check", holding, (h) =>
@@ -127,26 +181,30 @@ function renderCheckPanel(restock) {
   );
 
   const filter = normalize(document.getElementById("floor-check-filter").value);
-  const remaining = restock.filter((i) => !isFloorChecked(i) && !floorHolding.check.has(i.sku, i.size));
-  const shown = remaining.filter((i) => !filter || [i.description, i.sku, i.color].some((f) => normalize(f).includes(filter)));
-  document.getElementById("floor-check-count").textContent = `${shown.length} of ${remaining.length} to check`;
+  const groups = checkFloorGroups(restock);
+  const remaining = groups.filter((g) => !isCheckGroupHeld(g.key));
+  const shown = remaining.filter(
+    (g) => !filter || [g.description, g.color, ...g.rows.map((r) => r.sku)].some((f) => normalize(f).includes(filter))
+  );
+  document.getElementById("floor-check-count").textContent = `${shown.length} of ${plural(remaining.length, "style")} to check`;
 
   const el = document.getElementById("floor-check-list");
   el.innerHTML = shown.length
     ? shown
-        .slice()
-        .sort((a, b) => a.description.localeCompare(b.description))
-        .map((i) =>
-          floorLine(
-            i,
-            `<button type="button" class="btn primary small" data-action="floor-needed" data-sku="${escapeHtml(i.sku)}" data-size="${escapeHtml(
-              i.size
-            )}">Needed</button>
-             <button type="button" class="btn secondary small" data-action="floor-not-needed" data-sku="${escapeHtml(i.sku)}" data-size="${escapeHtml(
-              i.size
-            )}">Not needed</button>`
-          )
-        )
+        .map((g) => {
+          const key = escapeHtml(g.key);
+          return `
+          <div class="line-card">
+            <div class="line-main">
+              <div class="line-title">${escapeHtml(g.description)}</div>
+              <div class="line-sub">${escapeHtml(g.color || "—")}${g.qtySold ? ` · ${g.qtySold} sold` : ""}</div>
+            </div>
+            <div class="line-controls">
+              <button type="button" class="btn primary small" data-action="floor-needed" data-key="${key}">Needed</button>
+              <button type="button" class="btn secondary small" data-action="floor-not-needed" data-key="${key}">Not needed</button>
+            </div>
+          </div>`;
+        })
         .join("")
     : `<p class="no-results">${
         restock.length === 0
@@ -165,24 +223,35 @@ function renderReplenPanel(restock) {
     h.action === "picked" ? "Picked" : "Out of stock → 86 Board"
   );
 
-  const remaining = restock.filter((i) => isFloorNeeded(i) && !floorHolding.replen.has(i.sku, i.size));
-  document.getElementById("floor-replen-count").textContent = `${plural(remaining.length, "item")} to pick`;
-  document.getElementById("floor-replen-list").innerHTML = remaining.length
-    ? remaining
-        .slice()
-        .sort((a, b) => a.description.localeCompare(b.description))
-        .map((i) => {
-          const age = daysAgo(i.checkedDate);
-          const stale = age != null && age >= FLOOR_NEEDED_STALE_DAYS;
-          return floorLine(
-            { ...i, color: i.color + (stale ? ` · needed ${formatAge(age)}` : "") },
-            `<button type="button" class="btn primary small" data-action="floor-picked" data-sku="${escapeHtml(i.sku)}" data-size="${escapeHtml(
-              i.size
-            )}">Picked</button>
-             <button type="button" class="btn secondary small" data-action="floor-oos" data-sku="${escapeHtml(i.sku)}" data-size="${escapeHtml(
-              i.size
-            )}">Out of stock</button>`
-          );
+  const remaining = restock.filter((i) => isFloorNeeded(i) && !isReplenHeld(i.sku, i.size));
+  const groups = groupFloorRows(remaining);
+  document.getElementById("floor-replen-count").textContent = `${plural(remaining.length, "size")} across ${plural(groups.length, "style")}`;
+  document.getElementById("floor-replen-list").innerHTML = groups.length
+    ? groups
+        .map((g) => {
+          const oldest = Math.max(...g.rows.map((r) => daysAgo(r.checkedDate) ?? 0));
+          const stale = oldest >= FLOOR_NEEDED_STALE_DAYS;
+          const sizes = g.rows
+            .map((r) => {
+              const ids = `data-sku="${escapeHtml(r.sku)}" data-size="${escapeHtml(r.size)}"`;
+              return `
+              <div class="size-row">
+                <span class="size-tag">${escapeHtml(r.size || "Any")}</span>
+                <span class="size-row-actions">
+                  <button type="button" class="btn primary small" data-action="floor-picked" ${ids}>Picked</button>
+                  <button type="button" class="btn secondary small" data-action="floor-oos" ${ids}>Out of stock</button>
+                </span>
+              </div>`;
+            })
+            .join("");
+          return `
+          <div class="line-card stacked">
+            <div class="line-main">
+              <div class="line-title">${escapeHtml(g.description)}</div>
+              <div class="line-sub">${escapeHtml(g.color || "—")}${stale ? ` · <span class="age">needed ${escapeHtml(formatAge(oldest))}</span>` : ""}</div>
+            </div>
+            <div class="size-rows">${sizes}</div>
+          </div>`;
         })
         .join("")
     : `<p class="no-results">Nothing to pick right now.</p>`;
@@ -222,11 +291,11 @@ function sizeCheckboxes(containerId, cls, otherId, otherLabel) {
     ).join("") + `<label class="size-check"><input type="checkbox" id="${otherId}"><span>${escapeHtml(otherLabel)}</span></label>`;
 }
 
-function openNeededModal(sku, size) {
-  const item = findRestockRow(loadRestock(), sku, size, (p) => !isFloorChecked(p));
-  if (!item) return;
-  floorNeededTarget = { sku, size };
-  document.getElementById("floor-needed-label").textContent = `${item.description}${item.color ? " — " + item.color : ""} (sold in ${item.size || "—"})`;
+function openNeededModal(key) {
+  const group = checkFloorGroups(loadRestock()).find((g) => g.key === key);
+  if (!group) return;
+  floorNeededTarget = key;
+  document.getElementById("floor-needed-label").textContent = `${group.description}${group.color ? " — " + group.color : ""}`;
   sizeCheckboxes("floor-needed-sizes", "floor-needed-size", "floor-needed-other", "Other (any size)");
   setStatus("floor-needed-status", "", false);
   openModal("floor-needed-modal");
@@ -241,53 +310,94 @@ function saveNeededModal() {
     setStatus("floor-needed-status", "Pick at least one size, or Other.", true);
     return;
   }
-  const { sku, size } = floorNeededTarget;
+  const key = floorNeededTarget;
   floorNeededTarget = null;
   closeModal("floor-needed-modal");
-  stageCheckDecision(sku, size, "Needed", sizes);
+  stageCheckGroup(key, "Needed", sizes);
 }
 
-function stageCheckDecision(sku, size, status, sizes) {
-  const item = findRestockRow(loadRestock(), sku, size, (p) => !isFloorChecked(p));
-  if (!item) return;
-  stageFloor("check", { sku, size, description: item.description, color: item.color, status, sizes });
+/* Translates staged style/color decisions into the backend's per-row
+   decisions (each one { sku, size, status, sizes } against a blank-status
+   row, exactly what the original app sends):
+   - Not needed: every sold row in the line → "Not Needed".
+   - Needed with sizes S: a sold row whose size is in S → "Needed"; every
+     other sold row → "Not Needed" (it was looked at, and isn't needed).
+     Sizes in S with no sold row ride along as extras on one Needed row —
+     the backend appends one new "Needed" row per extra. If no sold row's
+     size was picked at all, a blank row is added first (floorrestockadd)
+     to carry them, so nothing gets marked Needed in a size nobody picked.
+   Returns { adds, decisions }. */
+function planCheckFloor(holding, restock) {
+  const groups = new Map(checkFloorGroups(restock).map((g) => [g.key, g]));
+  const adds = [];
+  const decisions = [];
+  for (const h of holding) {
+    const g = groups.get(h.key);
+    if (!g) continue;
+    if (h.status !== "Needed") {
+      g.rows.forEach((r) => decisions.push({ sku: r.sku, size: r.size, status: "Not Needed", sizes: [] }));
+      continue;
+    }
+    const wanted = h.sizes.map(String);
+    const covered = new Set();
+    let carrier = null;
+    for (const r of g.rows) {
+      const size = String(r.size);
+      if (wanted.includes(size) && !covered.has(size)) {
+        covered.add(size);
+        const d = { sku: r.sku, size: r.size, status: "Needed", sizes: [] };
+        if (!carrier) carrier = d;
+        decisions.push(d);
+      } else {
+        decisions.push({ sku: r.sku, size: r.size, status: "Not Needed", sizes: [] });
+      }
+    }
+    const missing = wanted.filter((s) => !covered.has(s));
+    if (!missing.length) continue;
+    if (carrier) {
+      carrier.sizes = [carrier.size, ...missing];
+    } else {
+      const base = g.rows[0];
+      adds.push({ sku: base.sku, size: missing[0], description: base.description, color: base.color, gender: base.gender });
+      decisions.push({ sku: base.sku, size: missing[0], status: "Needed", sizes: missing });
+    }
+  }
+  return { adds, decisions };
 }
 
 async function commitCheckFloor(btn) {
-  const holding = loadJSON(STORE.checkFloorHolding, []);
+  const holding = loadCheckHolding();
   if (!holding.length || !requireOnline("floor-check-status", "updated")) return;
   const initials = currentInitials();
   const date = todayISO();
-  const nowIso = new Date().toISOString();
-  setStatus("floor-check-status", `Updating ${plural(holding.length, "item")}…`, false);
+  setStatus("floor-check-status", `Updating ${plural(holding.length, "style")}…`, false);
 
   await withBusy(btn, async () => {
     try {
-      await api.checkFloorUpdate({
-        initials,
-        date,
-        decisions: holding.map((h) => ({ sku: h.sku, size: h.size, status: h.status, sizes: h.sizes })),
-      });
-      // Mirror the server: stamp the row, and a Needed decision adds one new
-      // "Needed" row per extra size picked besides the row's own.
+      const { adds, decisions } = planCheckFloor(holding, loadRestock());
+      // Carrier rows first, mirrored locally as each lands, so a failure
+      // partway leaves this phone matching the sheet.
+      for (const a of adds) {
+        await api.floorRestockAdd(a);
+        const restock = loadRestock();
+        restock.push(blankRestockRow(a));
+        saveJSON(STORE.floorRestock, restock);
+      }
+      await api.checkFloorUpdate({ initials, date, decisions });
+
+      // Mirror the server, in order: stamp the first blank row matching
+      // each decision; a Needed decision appends a row per extra size.
       const restock = loadRestock();
-      for (const h of holding) {
-        const row = findRestockRow(restock, h.sku, h.size, (p) => !isFloorChecked(p));
+      const nowIso = new Date().toISOString();
+      for (const d of decisions) {
+        const row = findRestockRow(restock, d.sku, d.size, (p) => !isFloorChecked(p));
         if (!row) continue;
-        row.status = h.status;
+        row.status = d.status;
         row.checkedBy = initials;
         row.checkedDate = nowIso;
-        if (h.status === "Needed") {
-          for (const size of h.sizes.filter((s) => s !== h.size)) {
-            restock.push({
-              ...row,
-              size,
-              qtySold: 0,
-              onHand: 0,
-              status: "Needed",
-              outOfStock: "",
-              restocked: "",
-            });
+        if (d.status === "Needed") {
+          for (const size of d.sizes.filter((s) => String(s) !== String(row.size))) {
+            restock.push({ ...row, size, qtySold: 0, onHand: 0, status: "Needed", outOfStock: "", restocked: "" });
           }
         }
       }
@@ -295,8 +405,9 @@ async function commitCheckFloor(btn) {
       saveJSON(STORE.checkFloorHolding, []);
       renderFloor();
       updateExceptionBadge();
-      setStatus("floor-check-status", `Updated ${plural(holding.length, "item")}. Needed items are on Replen now.`, false);
+      setStatus("floor-check-status", `Updated ${plural(holding.length, "style")}. Needed sizes are on Replen now.`, false);
     } catch (e) {
+      renderFloor();
       setStatus("floor-check-status", "Couldn't reach the sheet — items stay staged. Try again.", true);
     }
   });
@@ -308,8 +419,8 @@ async function addCatalogProductToCheck(sku) {
   const item = findProductBySku(sku);
   if (!item) return;
   const restock = loadRestock();
-  if (findRestockRow(restock, item.sku, item.size, (p) => !isFloorChecked(p))) {
-    setStatus("floor-lookup-status", "Already on the Check Floor list.", true);
+  if (checkFloorGroups(restock).some((g) => g.key === floorGroupKey(item))) {
+    setStatus("floor-lookup-status", `${item.description} — ${item.color} is already on the Check Floor list.`, true);
     return;
   }
   if (!requireOnline("floor-lookup-status", "added")) return;
@@ -394,7 +505,7 @@ async function saveManualEntry() {
     const restock = loadRestock();
     restock.push(blankRestockRow({ sku, size: ownSize, description }));
     saveJSON(STORE.floorRestock, restock);
-    stageCheckDecision(sku, ownSize, "Needed", sizes);
+    stageCheckGroup(floorGroupKey({ description, color: "" }), "Needed", sizes);
     document.getElementById("floor-search").value = "";
     renderFloorSearch();
     setStatus("floor-lookup-status", `Added ${description} — staged as Needed. Tap Update to push it.`, false);
@@ -408,7 +519,7 @@ async function saveManualEntry() {
 function stageReplen(sku, size, action) {
   const item = findRestockRow(loadRestock(), sku, size, isFloorNeeded);
   if (!item) return;
-  stageFloor("replen", { sku, size, description: item.description, color: item.color, action });
+  stageReplenRow({ sku, size, description: item.description, color: item.color, action });
 }
 
 async function commitReplen(btn) {
@@ -476,9 +587,9 @@ registerView("floor", {
 
     onAction(root, {
       "floor-tab": (el) => goTo(`floor/${el.dataset.sub}`),
-      "floor-needed": (el) => openNeededModal(el.dataset.sku, el.dataset.size),
-      "floor-not-needed": (el) => stageCheckDecision(el.dataset.sku, el.dataset.size, "Not Needed", []),
-      "floor-unstage": (el) => unstageFloor(el.dataset.which, el.dataset.sku, el.dataset.size),
+      "floor-needed": (el) => openNeededModal(el.dataset.key),
+      "floor-not-needed": (el) => stageCheckGroup(el.dataset.key, "Not Needed", []),
+      "floor-unstage": unstageFloor,
       "floor-check-update": commitCheckFloor,
       "floor-add-product": (el) => addCatalogProductToCheck(el.dataset.sku),
       "floor-manual": openManualModal,

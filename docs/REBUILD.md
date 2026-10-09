@@ -29,6 +29,12 @@ Highest leverage, lowest risk: mostly reorganizing what already exists.
       hard-tag assignment and recent counts
 - [x] **Floor Stock**: Check Floor, Replen and 86 Board merged into one module
       with a lifecycle progress strip on every line
+  - Check Floor shows **one line per style + color**, ignoring size. Staff
+    look at that style on the floor and pick the sizes that are needed. On
+    Update, the line becomes per-row decisions on the sheet: sold rows in a
+    picked size → Needed; other sold rows → Not Needed; picked sizes with no
+    sold row → new Needed rows. Replen is grouped the same way, with
+    Picked / Out of stock still per size
 - [x] **MAO confirmation generalized to Receiving**: a *Waiting on MAO* queue
       with "Hold all" so those boxes can be marked Received into MAO in one tap
 - [x] Runs side by side with the original app: same backend, isolated

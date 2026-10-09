@@ -458,6 +458,11 @@ label input, label select { margin-top: 4px; color: var(--text); font-weight: 40
 .line-title { font-weight: 650; }
 .line-sub { color: var(--text-dim); font-size: 0.82rem; margin-top: 2px; }
 .line-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.line-card.stacked { flex-direction: column !important; align-items: stretch !important; }
+.size-rows { display: flex; flex-direction: column; gap: 6px; }
+.size-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 6px; border-top: 1px solid var(--border); }
+.size-row-actions { display: flex; gap: 6px; }
+.line-sub .age { color: var(--warn); font-weight: 600; }
 .size-tag {
   display: inline-block;
   padding: 0 7px;
