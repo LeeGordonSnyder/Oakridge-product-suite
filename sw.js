@@ -1,6 +1,6 @@
 // Bump CACHE_VERSION on every shipped change (and the header version in index.html).
 const CACHE_PREFIX = "ops2-";
-const CACHE_VERSION = 4;
+const CACHE_VERSION = 5;
 const CACHE_NAME = `${CACHE_PREFIX}v${CACHE_VERSION}`;
 
 const CORE_ASSETS = [
@@ -11,7 +11,6 @@ const CORE_ASSETS = [
   "./icons/icon-192.png",
   "./icons/icon-512.png",
   "./icons/apple-touch-icon.png",
-  "./docs/Consolidations-Guide.pdf",
   "./js/vendor/html5-qrcode.min.js",
   "./js/core/utils.js",
   "./js/core/store.js",

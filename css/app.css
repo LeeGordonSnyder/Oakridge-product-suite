@@ -115,6 +115,7 @@ main {
   padding: 16px 16px calc(var(--nav-h) + env(safe-area-inset-bottom) + 24px);
 }
 .view-head { margin-bottom: 14px; }
+.guide-link { display: inline-block; margin-top: 4px; font-size: 0.85rem; font-weight: 600; color: var(--accent); text-decoration: none; }
 .view-head h2 { font-size: 1.5rem; font-weight: 800; }
 .section-head {
   display: flex;

@@ -83,4 +83,18 @@ sw.js                 offline app shell (ops2-* caches only)
 `js/core/exceptions.js` is the Exception & Confirmation Engine. It is the
 single place that decides what appears on Home and in the nav badge.
 
+## Staff guides
+
+Step-by-step PDF guides live in [`docs/guides/`](docs/guides/): a Getting
+Started guide (sign-in, access key, settings, updates) and one guide per page.
+Each page in the app links to its own guide, and Settings links to Getting
+Started. To regenerate them after a change (screenshots are captured from the
+real app against sample data, never the live sheet):
+
+```bash
+python3 -m http.server 8765 &        # from the repo root
+node tools/guides/shots.js           # needs Playwright
+python3 tools/guides/build.py docs/guides icons/icon-512.png
+```
+
 See [`docs/REBUILD.md`](docs/REBUILD.md) for the phased plan and what's done.

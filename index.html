@@ -18,7 +18,7 @@
   <img src="icons/icon-192.png" alt="" class="topbar-logo">
   <h1>Oakridge Product Suite
     <!-- Bump with sw.js CACHE_VERSION on every shipped change. -->
-    <span class="header-version" id="header-version">v2.0.3 · rebuild</span>
+    <span class="header-version" id="header-version">v2.0.4 · rebuild</span>
   </h1>
   <span id="offline-badge" class="badge" hidden>Offline</span>
   <div class="topbar-actions">
@@ -41,6 +41,7 @@
     <div class="view-head">
       <h2 id="home-greeting">Hello</h2>
       <p id="home-freshness" class="hint"></p>
+      <a class="guide-link" href="docs/guides/01-Home.pdf" target="_blank" rel="noopener">📄 Step-by-step guide</a>
     </div>
 
     <div class="quick-actions">
@@ -64,6 +65,7 @@
     <div class="view-head">
       <h2>Product Catalog</h2>
       <p id="catalog-summary" class="hint"></p>
+      <a class="guide-link" href="docs/guides/02-Product-Catalog.pdf" target="_blank" rel="noopener">📄 Step-by-step guide</a>
     </div>
 
     <div class="search-row">
@@ -99,7 +101,7 @@
 
   <!-- ================= COUNTS ================= -->
   <section id="view-counts" class="view" hidden>
-    <div class="view-head"><h2>Counts</h2></div>
+    <div class="view-head"><h2>Counts</h2><a class="guide-link" href="docs/guides/03-Counts.pdf" target="_blank" rel="noopener">📄 Step-by-step guide</a></div>
 
     <button type="button" class="btn primary block" data-action="count-scan">📷 Scan Product to Count</button>
     <p id="count-status" class="status-msg" role="status"></p>
@@ -165,7 +167,7 @@
   <section id="view-consol" class="view" hidden>
     <div class="view-head">
       <h2>Consolidations</h2>
-      <a class="hint" href="docs/Consolidations-Guide.pdf" target="_blank" rel="noopener">📄 Consolidations Guide</a>
+      <a class="guide-link" href="docs/guides/04-Consolidations.pdf" target="_blank" rel="noopener">📄 Step-by-step guide</a>
     </div>
     <p id="consol-status" class="status-msg" role="status"></p>
 
@@ -201,7 +203,7 @@
 
   <!-- ================= RECEIVING ================= -->
   <section id="view-receiving" class="view" hidden>
-    <div class="view-head"><h2>Receiving</h2></div>
+    <div class="view-head"><h2>Receiving</h2><a class="guide-link" href="docs/guides/05-Receiving.pdf" target="_blank" rel="noopener">📄 Step-by-step guide</a></div>
 
     <button type="button" class="btn primary block" data-action="recv-scan">🚚 Scan Boxes</button>
     <p id="recv-status" class="status-msg" role="status"></p>
@@ -252,6 +254,7 @@
     <div class="view-head">
       <h2>Floor Stock</h2>
       <p id="floor-last-check" class="hint"></p>
+      <a class="guide-link" href="docs/guides/06-Floor-Stock.pdf" target="_blank" rel="noopener">📄 Step-by-step guide</a>
     </div>
 
     <div id="floor-tabs" class="segmented" role="tablist">
@@ -396,6 +399,7 @@
     <p id="settings-add-status" class="status-msg" role="status"></p>
 
     <button type="button" id="settings-feedback-btn" class="btn secondary block">💬 Leave feedback</button>
+    <a class="btn secondary block" href="docs/guides/00-Getting-Started.pdf" target="_blank" rel="noopener">📄 Getting Started guide</a>
     <p id="settings-about" class="hint about"></p>
     <button type="button" class="btn secondary block" data-close="settings-modal">Close</button>
   </div>
