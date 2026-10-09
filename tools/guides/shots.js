@@ -154,6 +154,8 @@ const RECV_PASTE = "ETA:  10-10-2026\nPackage  8069559026403620\nOrigin  9120\nR
   await page.click('#catalog-results .result-row >> nth=1');
   await page.waitForSelector('#catalog-detail:not([hidden])');
   await shot('cat-03-detail', '#catalog-detail .product-card');
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await shot('cat-08-detail-full'); // full phone screen, used by the motion piece
   await page.fill('#catalog-search', 'cerium');
   await page.click('#catalog-results .result-row');
   await page.selectOption('#catalog-tag-select', 'Hood');
