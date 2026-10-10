@@ -32,6 +32,92 @@ function homeKpis() {
   ];
 }
 
+/* ---------- Your shift today ----------
+   Read from the Deployment tab in the sheet (built each morning from When I
+   Work, then edited by leads as the day changes), matched on the signed-in
+   person's initials via the sheet's "Staff Calendars" tab. */
+
+function fmtClock(min) {
+  const h24 = Math.floor(min / 60), m = min % 60;
+  const h = ((h24 + 11) % 12) + 1;
+  return `${h}:${String(m).padStart(2, "0")}${h24 < 12 ? "am" : "pm"}`;
+}
+
+function myDeployment() {
+  const saved = loadJSON(STORE.deployment, null);
+  if (!saved || !saved.deployment) return null;
+  const d = saved.deployment;
+  const me = currentInitials().toUpperCase();
+  const person = (d.people || []).find((p) => (p.initials || "").toUpperCase() === me) || null;
+  const codes = Object.fromEntries((saved.codes || []).map((c) => [c.code, c]));
+  return { d, person, codes, isToday: d.date === todayISO() };
+}
+
+function renderShiftCard() {
+  const el = document.getElementById("home-shift");
+  const info = myDeployment();
+  if (!info) {
+    el.hidden = true; // backend not set up for deployments (yet)
+    return;
+  }
+  el.hidden = false;
+  const { d, person, codes, isToday } = info;
+  if (!isToday) {
+    el.innerHTML = `<div class="shift-head"><span class="kicker-sm">Your shift today</span></div>
+      <p class="hint">Today's deployment hasn't been built yet${d.label ? ` (latest is ${escapeHtml(d.label)})` : ""}.</p>`;
+    return;
+  }
+  if (!person || !person.blocks.length) {
+    el.innerHTML = `<div class="shift-head"><span class="kicker-sm">Your shift today</span></div>
+      <p class="hint">You're not on today's deployment. If that's wrong, check your initials are on the “Staff Calendars” tab, or ask a lead.</p>`;
+    return;
+  }
+  const now = (() => { const t = new Date(); return t.getHours() * 60 + t.getMinutes(); })();
+  const span = person.end - person.start;
+  const worked = person.blocks.filter((b) => b.code !== "B").reduce((a, b) => a + (b.end - b.start), 0);
+  const style = (code) => {
+    const c = codes[code];
+    return c ? `background:${c.bg};color:${c.fg}` : "background:#ddd;color:#333";
+  };
+  const label = (code) => (codes[code] ? codes[code].label : code);
+  const bar = person.blocks
+    .map((b) => `<span class="seg" style="${style(b.code)};flex:${b.end - b.start}" title="${escapeHtml(label(b.code))}"></span>`)
+    .join("");
+  const marker = now > person.start && now < person.end
+    ? `<span class="now-marker" style="left:${(((now - person.start) / span) * 100).toFixed(2)}%"></span>`
+    : "";
+  const status = now < person.start
+    ? `Starts in ${formatDuration(person.start - now)}`
+    : now >= person.end
+    ? "Shift finished — nice work"
+    : `On now · done in ${formatDuration(person.end - now)}`;
+  const rows = person.blocks
+    .map((b) => {
+      const current = now >= b.start && now < b.end;
+      return `<li class="${current ? "current" : ""}${now >= b.end ? " past" : ""}">
+        <span class="code-chip" style="${style(b.code)}">${escapeHtml(b.code)}</span>
+        <span class="blk-label">${escapeHtml(label(b.code))}${current ? ' <span class="pill pill-ok">now</span>' : ""}</span>
+        <span class="blk-time">${fmtClock(b.start)} – ${fmtClock(b.end)}</span>
+      </li>`;
+    })
+    .join("");
+  el.innerHTML = `
+    <div class="shift-head">
+      <span class="kicker-sm">Your shift today · ${escapeHtml(d.label || "")}</span>
+      <span class="hint">${escapeHtml(status)}</span>
+    </div>
+    <div class="shift-times"><strong>${fmtClock(person.start)}</strong> – <strong>${fmtClock(person.end)}</strong>
+      <span class="hint">· ${formatDuration(worked)} on the floor</span></div>
+    <div class="shift-bar">${bar}${marker}</div>
+    <div class="shift-axis"><span>${fmtClock(person.start)}</span><span>${fmtClock(person.end)}</span></div>
+    <ul class="shift-blocks">${rows}</ul>`;
+}
+
+function formatDuration(min) {
+  const h = Math.floor(min / 60), m = min % 60;
+  return h ? `${h}h${m ? " " + m + "m" : ""}` : `${m}m`;
+}
+
 registerView("home", {
   init(root) {
     onAction(root, {
@@ -47,6 +133,8 @@ registerView("home", {
     const hour = new Date().getHours();
     const greet = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
     document.getElementById("home-greeting").textContent = `${greet}${initials ? ", " + initials : ""}`;
+
+    renderShiftCard();
 
     const lastSync = loadJSON(STORE.lastSync, null);
     document.getElementById("home-freshness").textContent = lastSync

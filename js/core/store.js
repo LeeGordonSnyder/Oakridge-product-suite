@@ -27,6 +27,7 @@ const STORE = {
   scannerZoom: "ops2.scannerZoom",
   lastSync: "ops2.lastSync",
   floorView: "ops2.floorView",
+  deployment: "ops2.deployment",
 };
 
 const LEGACY_KEYS = {

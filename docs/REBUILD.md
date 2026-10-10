@@ -44,6 +44,17 @@ Small additions made along the way: a typed-reference fallback for Close a
 Box (for when the slip won't scan), and filter chips on Counts (All /
 Outside tolerance / Not saved).
 
+## Added: daily deployment from When I Work
+
+- [x] `backend/Deployment.gs`: a separate Apps Script file plus a one-line hook,
+      so the original app is unaffected. It builds a color-coded **Deployment**
+      tab each morning from everyone's When I Work feed, places breaks
+      automatically under the floor-coverage rules, and stays hand-editable.
+      Setup steps are in `backend/README.md`.
+- [x] App: a **Your shift today** card on Home (roles, times, breaks, a "now"
+      marker), read from the Deployment tab. It stays hidden until the add-on
+      is installed.
+
 ## Phase 2 — next
 
 - [ ] Configurable count tolerance (currently fixed in `exceptions.js`
