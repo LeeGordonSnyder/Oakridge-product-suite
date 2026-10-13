@@ -50,7 +50,8 @@ working exactly as before.
   Everything after 5am is hand-editable.
 - **Edits are safe from the auto-build.** It never touches a day that's
   already been built. **Build today's deployment** from the menu does rebuild
-  it, and asks first.
+  it, and asks first. A rebuild replaces the grid, keeps the Hourly Tracker
+  numbers, and clears anything else added to the tab by hand.
 - **Previous days are kept.** Yesterday's tab is renamed `Deployment YYYY-MM-DD`
   and kept for 14 days.
 - **Breaks are placed automatically.** The rules are the same as the WiW
@@ -71,6 +72,33 @@ working exactly as before.
   code's color and meaning, and which When I Work positions map to it (for
   example *Product Operations → PROD*). Edit it there. New codes and colors
   apply from the next build; colors on today's tab update when it's rebuilt.
+
+## Hourly Tracker
+
+Each build adds an **Hourly Tracker** under the staff rows. It has one column
+per hour from 10am to 8pm, each sitting under that hour on the grid, plus a
+**CLOSE** column under 9pm.
+
+| Row | Hourly cell | CLOSE |
+|---|---|---|
+| Floor Lead | typed in | — |
+| % of sales | typed in | sum |
+| Sales Target | typed in | sum |
+| Total | typed in | sum |
+| Sales % | Total ÷ Sales Target | average |
+| AOV, UPT | typed in | average |
+| Transactions, Traffic | typed in | sum |
+| Conversion | Transactions ÷ Traffic | average |
+
+A formula cell stays blank until its inputs are filled in, so there are no
+`#DIV/0!` errors and CLOSE averages count only the hours with data.
+
+- **New day:** the tracker starts blank, except **% of sales**, which carries
+  over from the previous day. Change which rows carry over in
+  `DEPLOY.TRACKER.CARRY_OVER`.
+- **Rebuilding the same day:** every number already typed in is kept.
+- **Yesterday's numbers** stay on its archived `Deployment YYYY-MM-DD` tab.
+- **The hours** are set by `DEPLOY.TRACKER.FIRST_HOUR` and `LAST_HOUR`.
 
 ## What the app shows
 

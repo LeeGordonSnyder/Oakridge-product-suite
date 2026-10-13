@@ -51,7 +51,31 @@ const DEPLOY = {
     MIN_FLOOR_LEADS: 1, // never zero Floor Leads while one is scheduled
   },
   BREAK_CODE: "B",
+  // Hourly Tracker, written under the staff rows. One column per selling
+  // hour, lined up under that hour on the grid, plus CLOSE under the next hour.
+  TRACKER: {
+    TITLE: "Hourly Tracker",
+    FIRST_HOUR: 10, // 10am
+    LAST_HOUR: 20, // 8pm
+    CARRY_OVER: ["% of sales"], // rows copied from the previous day's tracker
+  },
 };
+
+// label, kind, number format, CLOSE column. "input" rows are typed in (white),
+// "plan" rows are typed in (grey), "calc" rows are formulas.
+const DEPLOY_TRACKER_ROWS = [
+  ["Floor Lead", "input", "@", ""],
+  ["Segment", "header", "@", ""],
+  ["% of sales", "plan", "0%", "sum"],
+  ["Sales Target", "plan", "$#,##0", "sum"],
+  ["Total", "input", "$#,##0", "sum"],
+  ["Sales %", "calc", "0%", "avg", "Total", "Sales Target"],
+  ["AOV", "input", "$#,##0.00", "avg"],
+  ["UPT", "input", "0.00", "avg"],
+  ["Transactions", "input", "0", "sum"],
+  ["Traffic", "input", "0", "sum"],
+  ["Conversion", "calc", "0%", "avg", "Transactions", "Traffic"],
+];
 
 // Code, meaning, fill, text color, When I Work position names that map to it.
 // Seeded into the "Deployment Codes" tab once; edit the tab, not this list.
@@ -409,7 +433,12 @@ function deployArchiveCurrent_(ss) {
 function deployWriteSheet_(dayKey, roster, codes) {
   const ss = SpreadsheetApp.getActive();
   const cur = ss.getSheetByName(DEPLOY.SHEET);
-  if (cur && cur.getRange("B1").getNote() === dayKey) ss.deleteSheet(cur); // rebuilding the same day
+  const sameDay = !!cur && cur.getRange("B1").getNote() === dayKey;
+  // Tracker numbers survive a same-day rebuild; a new day starts blank apart
+  // from the CARRY_OVER rows.
+  let keep = cur ? deployReadTracker_(cur) : {};
+  if (!sameDay) keep = Object.fromEntries(DEPLOY.TRACKER.CARRY_OVER.filter((l) => keep[l]).map((l) => [l, keep[l]]));
+  if (sameDay) ss.deleteSheet(cur);
   else deployArchiveCurrent_(ss);
   const sh = ss.insertSheet(DEPLOY.SHEET, 0);
   const C = DEPLOY.COL, n = deploySlotCount_();
@@ -476,6 +505,8 @@ function deployWriteSheet_(dayKey, roster, codes) {
     sh.getRange(DEPLOY.HEADER_ROW + 1 + i, lc + 1).setValue(c.label);
   });
 
+  deployWriteTracker_(sh, DEPLOY.FIRST_STAFF_ROW + rows + 1, keep);
+
   // Sizing
   sh.setColumnWidth(1, 110); sh.setColumnWidth(2, 100);
   sh.setColumnWidths(C.BREAK30, 3, 58);
@@ -487,11 +518,110 @@ function deployWriteSheet_(dayKey, roster, codes) {
   ss.setActiveSheet(sh);
 }
 
+/* ---------- Hourly Tracker ---------- */
+
+function deployColLetter_(col) {
+  let s = "";
+  for (; col > 0; col = Math.floor((col - 1) / 26)) s = String.fromCharCode(65 + ((col - 1) % 26)) + s;
+  return s;
+}
+
+// First grid column of an hour (e.g. 10 → the 10:00 slot).
+function deployHourCol_(hour) {
+  return DEPLOY.COL.GRID + (hour * 60 - DEPLOY.GRID_START_MIN) / DEPLOY.SLOT_MIN;
+}
+
+function deployTrackerHours_() {
+  const hours = [];
+  for (let h = DEPLOY.TRACKER.FIRST_HOUR; h <= DEPLOY.TRACKER.LAST_HOUR; h++) hours.push(h);
+  return hours;
+}
+
+// The tracker's cell contents, as a values/formulas block: one row per
+// DEPLOY_TRACKER_ROWS entry, columns 1 … lastCol. keep[label] = hourly values.
+function deployTrackerValues_(top, lastCol, keep) {
+  const L = deployColLetter_, span = 60 / DEPLOY.SLOT_MIN;
+  const hours = deployTrackerHours_();
+  const first = deployHourCol_(hours[0]);
+  const lastHourEnd = deployHourCol_(hours[hours.length - 1]) + span - 1;
+  const close = deployHourCol_(DEPLOY.TRACKER.LAST_HOUR + 1);
+  const rowOf = {};
+  DEPLOY_TRACKER_ROWS.forEach((r, i) => (rowOf[r[0]] = top + 1 + i));
+  return DEPLOY_TRACKER_ROWS.map(([label, kind, , closeAgg, num, den]) => {
+    const row = new Array(lastCol).fill("");
+    const r = rowOf[label];
+    row[0] = label;
+    hours.forEach((h, i) => {
+      const c = deployHourCol_(h);
+      if (kind === "header") row[c - 1] = deployFmtTime_(h * 60).replace("a", "am").replace("p", "pm");
+      else if (kind === "calc") row[c - 1] = `=IFERROR(${L(c)}${rowOf[num]}/${L(c)}${rowOf[den]},"")`;
+      else if (keep[label] && keep[label][i] !== undefined) row[c - 1] = keep[label][i];
+    });
+    const range = `${L(first)}${r}:${L(lastHourEnd)}${r}`;
+    if (kind === "header") row[close - 1] = "CLOSE";
+    else if (closeAgg === "sum") row[close - 1] = `=IF(COUNT(${range}),SUM(${range}),"")`;
+    else if (closeAgg === "avg") row[close - 1] = `=IFERROR(AVERAGE(${range}),"")`;
+    return row;
+  });
+}
+
+function deployWriteTracker_(sh, top, keep) {
+  const span = 60 / DEPLOY.SLOT_MIN, lastCol = DEPLOY.COL.GRID + deploySlotCount_() - 1;
+  const R = DEPLOY_TRACKER_ROWS, n = R.length;
+  const first = deployHourCol_(DEPLOY.TRACKER.FIRST_HOUR), close = deployHourCol_(DEPLOY.TRACKER.LAST_HOUR + 1);
+  const pink = "#b5577a", grey = "#d9d9d9", closeGrey = "#bfbfbf", filler = "#f4eff1";
+
+  // Title bar. Columns A–B are frozen and a merge can't cross into them.
+  sh.getRange(top, 1, 1, lastCol).setBackground(pink);
+  sh.getRange(top, 3, 1, lastCol - 2).merge().setValue(DEPLOY.TRACKER.TITLE)
+    .setFontColor("#ffffff").setFontWeight("bold").setFontSize(12).setHorizontalAlignment("center");
+
+  // Formats go on before the values, so "10am" stays text.
+  R.forEach(([, , fmt], i) => sh.getRange(top + 1 + i, 1, 1, lastCol).setNumberFormat(fmt));
+  const block = sh.getRange(top + 1, 1, n, lastCol);
+  block.setValues(deployTrackerValues_(top, lastCol, keep))
+    .setFontFamily("Arial").setFontSize(10).setHorizontalAlignment("center").setVerticalAlignment("middle")
+    .setBorder(true, true, true, true, true, true, "#5b4a4e", SpreadsheetApp.BorderStyle.SOLID);
+  for (const h of deployTrackerHours_()) sh.getRange(top + 1, deployHourCol_(h), n, span).mergeAcross();
+  sh.getRange(top + 1, close, n, span).mergeAcross();
+
+  R.forEach(([, kind], i) => {
+    if (kind !== "input") sh.getRange(top + 1 + i, 1, 1, lastCol).setBackground(grey);
+  });
+  sh.getRange(top + 1, 1, n, 1).setFontWeight("bold");
+  sh.getRange(top + 2, 1, 1, lastCol).setFontWeight("bold"); // Segment
+  sh.getRange(top + 1, 2, n, first - 2).setBackground(filler).setBorder(null, null, null, null, false, false); // before opening
+  sh.getRange(top + 1, close, n, lastCol - close + 1).setBackground(closeGrey);
+  sh.setRowHeight(top, 26);
+  sh.setRowHeights(top + 1, n, 22);
+}
+
+// { label: [value per hour] } for the typed-in rows of a tab's tracker.
+function deployReadTracker_(sh) {
+  const top = deployTrackerRow_(sh);
+  if (!top) return {};
+  const lastCol = DEPLOY.COL.GRID + deploySlotCount_() - 1;
+  const vals = sh.getRange(top + 1, 1, DEPLOY_TRACKER_ROWS.length, lastCol).getValues();
+  const kinds = Object.fromEntries(DEPLOY_TRACKER_ROWS.map((r) => [r[0], r[1]]));
+  const out = {};
+  for (const row of vals) {
+    const label = String(row[0]).trim();
+    if (kinds[label] !== "input" && kinds[label] !== "plan") continue;
+    out[label] = deployTrackerHours_().map((h) => row[deployHourCol_(h) - 1]);
+  }
+  return out;
+}
+
+function deployTrackerRow_(sh) {
+  const hit = sh.createTextFinder(DEPLOY.TRACKER.TITLE).matchEntireCell(true).findNext();
+  return hit ? hit.getRow() : 0;
+}
+
 function deployMenuBuildToday() {
   const ui = SpreadsheetApp.getUi();
   const cur = SpreadsheetApp.getActive().getSheetByName(DEPLOY.SHEET);
   if (cur && cur.getRange("B1").getNote() === deployTodayKey_()) {
-    const r = ui.alert("Rebuild today's deployment?", "Today's tab already exists. Rebuilding pulls fresh shifts from When I Work and replaces any changes made to it today.", ui.ButtonSet.OK_CANCEL);
+    const r = ui.alert("Rebuild today's deployment?", "Today's tab already exists. Rebuilding pulls fresh shifts from When I Work and replaces any changes made to the grid today. Numbers in the Hourly Tracker are kept.", ui.ButtonSet.OK_CANCEL);
     if (r !== ui.Button.OK) return;
   }
   const roster = deployBuild();
@@ -538,7 +668,8 @@ function getDeploymentForApp() {
   if (!sh) return { ok: true, deployment: null, codes };
   const dayKey = sh.getRange("B1").getNote();
   const n = deploySlotCount_();
-  const last = sh.getLastRow();
+  const tracker = deployTrackerRow_(sh);
+  const last = tracker ? tracker - 1 : sh.getLastRow(); // staff rows end above the Hourly Tracker
   const people = [];
   if (last >= DEPLOY.FIRST_STAFF_ROW) {
     const staff = deployReadStaff_();
@@ -561,5 +692,5 @@ function getDeploymentForApp() {
 
 // Node test harness hook (ignored by Apps Script)
 if (typeof module !== "undefined") {
-  module.exports = { DEPLOY, DEFAULT_DEPLOY_CODES, deployParseIcs_, deployBlocksForDay_, deployBuildRoster_, deployScheduleBreaks_, deploySlotsFor_, deployBlocksFromSlots_, deployFmtTime_, deployDayLabel_, deployRequiredBreaks_, deployLocalParts_ };
+  module.exports = { DEPLOY, DEFAULT_DEPLOY_CODES, deployParseIcs_, deployBlocksForDay_, deployBuildRoster_, deployScheduleBreaks_, deploySlotsFor_, deployBlocksFromSlots_, deployFmtTime_, deployDayLabel_, deployRequiredBreaks_, deployLocalParts_, DEPLOY_TRACKER_ROWS, deployTrackerValues_, deployWriteTracker_, deployReadTracker_, deployHourCol_, deployColLetter_, deployWriteSheet_, getDeploymentForApp };
 }

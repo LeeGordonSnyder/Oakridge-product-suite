@@ -51,6 +51,9 @@ Outside tolerance / Not saved).
       tab each morning from everyone's When I Work feed, places breaks
       automatically under the floor-coverage rules, and stays hand-editable.
       Setup steps are in `backend/README.md`.
+- [x] **Hourly Tracker** under the grid: sales target, total, AOV, UPT,
+      transactions and traffic per hour, with Sales % and Conversion
+      formulas and a CLOSE column. It survives a same-day rebuild.
 - [x] App: a **Your shift today** card on Home (roles, times, breaks, a "now"
       marker), read from the Deployment tab. It stays hidden until the add-on
       is installed.
