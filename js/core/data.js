@@ -168,9 +168,6 @@ async function loadSharedFloorRestock() {
   }
 }
 
-// Pulls every shared sheet at once. Records when the last fully
-// successful pull happened so Home can say how fresh its numbers are.
-// Resolves to { ok, unauthorized }.
 // Today's deployment grid (built in the sheet from When I Work). Optional:
 // a backend without the Deployment.gs add-on answers this request with some
 // other sheet's rows, so only a { deployment } object is accepted, and it
@@ -186,6 +183,9 @@ async function loadSharedDeployment() {
   }
 }
 
+// Pulls every shared sheet at once. Records when the last fully
+// successful pull happened so Home can say how fresh its numbers are.
+// Resolves to { ok, unauthorized }.
 async function loadAllShared() {
   const [, ...results] = await Promise.all([
     loadSharedDeployment(),

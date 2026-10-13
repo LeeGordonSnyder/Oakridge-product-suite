@@ -33,6 +33,19 @@ function refreshSharedData() {
   return refreshing;
 }
 
+// Leads change the deployment during the day (moving breaks and roles), so
+// it's re-pulled on its own, one small request, whenever the app comes back
+// on screen and every few minutes while it's open. Everything else waits for
+// ↻ as before.
+const DEPLOYMENT_STALE_MS = 2 * 60 * 1000;
+
+async function refreshDeploymentIfStale() {
+  if (document.hidden || !navigator.onLine || refreshing || !currentInitials()) return;
+  const saved = loadJSON(STORE.deployment, null);
+  if (saved && Date.now() - new Date(saved.fetchedAt).getTime() < DEPLOYMENT_STALE_MS) return;
+  if ((await loadSharedDeployment()) === true && currentRoute.id === "home" && !document.hidden) renderShiftCard();
+}
+
 function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) return;
   // A controller already present means an earlier visit's worker is
@@ -79,6 +92,8 @@ document.addEventListener("DOMContentLoaded", () => {
   initChangeUser();
   initSettings();
   document.getElementById("refresh-btn").addEventListener("click", refreshSharedData);
+  document.addEventListener("visibilitychange", refreshDeploymentIfStale);
+  setInterval(refreshDeploymentIfStale, 60 * 1000);
   setOffline(!navigator.onLine);
   registerServiceWorker();
 

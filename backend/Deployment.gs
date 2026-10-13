@@ -300,6 +300,66 @@ function deployBlocksFromSlots_(slots) {
 /* ===================== building the day (pure) ===================== */
 
 // people: [{ initials, name, ics }] -> roster sorted by start time, with breaks
+/* ---------- keeping the break columns and the grid's B cells in step ---------- */
+
+// "12:30p", "12:30 pm", "1p", "13:15" → minutes since midnight. A time with
+// no am/pm is read as store hours: 8–11 morning, 12–7 afternoon.
+function deployParseBreakTime_(text) {
+  const m = String(text || "").trim().toLowerCase().match(/^(\d{1,2})(?::?(\d{2}))?\s*([ap])?\.?m?\.?$/);
+  if (!m) return null;
+  let h = Number(m[1]);
+  const min = Number(m[2] || 0);
+  if (h > 23 || min > 59) return null;
+  if (m[3] === "p" && h < 12) h += 12;
+  else if (m[3] === "a" && h === 12) h = 0;
+  else if (!m[3] && h >= 1 && h <= 7) h += 12;
+  return h * 60 + min;
+}
+
+// The grid's B runs → [30-min break, first 15, second 15] as shown in the
+// BREAK / 15 MIN columns. A run of 2+ slots is the 30.
+function deployBreaksFromSlots_(slots) {
+  const runs = [];
+  slots.forEach((code, i) => {
+    if (String(code).trim().toUpperCase() !== DEPLOY.BREAK_CODE) return;
+    const last = runs[runs.length - 1];
+    if (last && last.end === i) last.end = i + 1;
+    else runs.push({ start: i, end: i + 1 });
+  });
+  const time = (i) => deployFmtTime_(DEPLOY.GRID_START_MIN + i * DEPLOY.SLOT_MIN);
+  const thirty = runs.find((r) => r.end - r.start >= 2);
+  const fifteens = runs.filter((r) => r !== thirty).slice(0, 2);
+  return [thirty ? time(thirty.start) : "", fifteens[0] ? time(fifteens[0].start) : "", fifteens[1] ? time(fifteens[1].start) : ""];
+}
+
+// Moves the grid's B cells to the times typed in the break columns. The slots
+// a break leaves go back to the role next to them. Returns null if a time
+// can't be read, so nothing is changed.
+function deployMoveBreaksInSlots_(slots, b30, b15a, b15b) {
+  const isB = (c) => String(c).trim().toUpperCase() === DEPLOY.BREAK_CODE;
+  const out = slots.slice();
+  for (let i = 0; i < out.length; i++) {
+    if (!isB(out[i])) continue;
+    let j = i;
+    while (j < out.length && isB(out[j])) j++;
+    const before = i > 0 ? String(out[i - 1]).trim() : "";
+    const after = j < out.length ? String(out[j]).trim() : "";
+    for (let k = i; k < j; k++) out[k] = before || after;
+    i = j - 1;
+  }
+  const wanted = [[b30, 30], [b15a, 15], [b15b, 15]].filter(([t]) => String(t || "").trim());
+  for (const [t, minutes] of wanted) {
+    const at = deployParseBreakTime_(t);
+    if (at === null) return null;
+    const first = Math.floor((at - DEPLOY.GRID_START_MIN) / DEPLOY.SLOT_MIN);
+    if (first < 0 || first >= out.length || !String(out[first]).trim()) return null; // outside the shift
+    for (let k = first; k < first + minutes / DEPLOY.SLOT_MIN; k++) {
+      if (k >= 0 && k < out.length && String(out[k]).trim()) out[k] = DEPLOY.BREAK_CODE; // stop at the shift's end
+    }
+  }
+  return out;
+}
+
 function deployBuildRoster_(people, dayKey, codes) {
   const roster = [];
   for (const p of people) {
@@ -347,6 +407,7 @@ function deploySetup() {
     codes.setFrozenRows(1);
     codes.setColumnWidth(2, 200); codes.setColumnWidth(5, 380);
   }
+  deployEnsureEditSync_();
   SpreadsheetApp.getActive().toast("Deployment tabs are ready. Add everyone's When I Work link to “Staff Calendars”, then Deployment → Build today's deployment.");
 }
 
@@ -387,6 +448,7 @@ function deployFetchFeed_(url) {
 // Pulls every feed, builds the roster and (re)writes the Deployment tab.
 function deployBuild(dayKey) {
   dayKey = dayKey || deployTodayKey_();
+  deployEnsureEditSync_();
   const ss = SpreadsheetApp.getActive();
   const codes = deployReadCodes_();
   const staff = deployReadStaff_();
@@ -516,6 +578,46 @@ function deployWriteSheet_(dayKey, roster, codes) {
   sh.setFrozenRows(DEPLOY.HEADER_ROW);
   sh.setFrozenColumns(2);
   ss.setActiveSheet(sh);
+}
+
+/* ---------- edits on the day ---------- */
+
+// Installable on-edit trigger (named so it can't clash with an onEdit in
+// Code.gs). Typing a time in BREAK / 15 MIN moves that person's B cells on
+// the grid; editing the grid rewrites their break times. The app reads the
+// grid, so both routes reach it.
+function deployOnEdit(e) {
+  const range = e && e.range;
+  if (!range || range.getSheet().getName() !== DEPLOY.SHEET) return;
+  const sh = range.getSheet(), C = DEPLOY.COL, n = deploySlotCount_();
+  const tracker = deployTrackerRow_(sh);
+  const r0 = Math.max(range.getRow(), DEPLOY.FIRST_STAFF_ROW);
+  const r1 = Math.min(range.getLastRow(), tracker ? tracker - 1 : sh.getLastRow());
+  const c0 = range.getColumn(), c1 = range.getLastColumn();
+  const touchesGrid = c1 >= C.GRID && c0 < C.GRID + n;
+  const touchesBreaks = c0 <= C.BREAK15B && c1 >= C.BREAK30;
+  if (r1 < r0 || (!touchesGrid && !touchesBreaks)) return;
+
+  const rows = sh.getRange(r0, 1, r1 - r0 + 1, C.GRID + n - 1).getDisplayValues();
+  rows.forEach((r, i) => {
+    let slots = r.slice(C.GRID - 1);
+    if (!slots.some((x) => String(x).trim())) return; // nobody on this row
+    if (!touchesGrid) {
+      slots = deployMoveBreaksInSlots_(slots, r[C.BREAK30 - 1], r[C.BREAK15A - 1], r[C.BREAK15B - 1]);
+      if (!slots) return; // unreadable time: leave it for the lead to fix
+      sh.getRange(r0 + i, C.GRID, 1, n).setValues([slots]);
+    }
+    const breaks = deployBreaksFromSlots_(slots);
+    if (breaks.join("|") !== [r[C.BREAK30 - 1], r[C.BREAK15A - 1], r[C.BREAK15B - 1]].join("|")) {
+      sh.getRange(r0 + i, C.BREAK30, 1, 3).setValues([breaks]).setBackground(null).clearNote();
+    }
+  });
+}
+
+function deployEnsureEditSync_() {
+  const ss = SpreadsheetApp.getActive();
+  if (ScriptApp.getProjectTriggers().some((t) => t.getHandlerFunction() === "deployOnEdit")) return;
+  ScriptApp.newTrigger("deployOnEdit").forSpreadsheet(ss).onEdit().create();
 }
 
 /* ---------- Hourly Tracker ---------- */
@@ -692,5 +794,5 @@ function getDeploymentForApp() {
 
 // Node test harness hook (ignored by Apps Script)
 if (typeof module !== "undefined") {
-  module.exports = { DEPLOY, DEFAULT_DEPLOY_CODES, deployParseIcs_, deployBlocksForDay_, deployBuildRoster_, deployScheduleBreaks_, deploySlotsFor_, deployBlocksFromSlots_, deployFmtTime_, deployDayLabel_, deployRequiredBreaks_, deployLocalParts_, DEPLOY_TRACKER_ROWS, deployTrackerValues_, deployWriteTracker_, deployReadTracker_, deployHourCol_, deployColLetter_, deployWriteSheet_, getDeploymentForApp };
+  module.exports = { DEPLOY, DEFAULT_DEPLOY_CODES, deployParseIcs_, deployBlocksForDay_, deployBuildRoster_, deployScheduleBreaks_, deploySlotsFor_, deployBlocksFromSlots_, deployFmtTime_, deployDayLabel_, deployRequiredBreaks_, deployLocalParts_, DEPLOY_TRACKER_ROWS, deployTrackerValues_, deployWriteTracker_, deployReadTracker_, deployHourCol_, deployColLetter_, deployWriteSheet_, getDeploymentForApp, deployParseBreakTime_, deployBreaksFromSlots_, deployMoveBreaksInSlots_, deployOnEdit };
 }

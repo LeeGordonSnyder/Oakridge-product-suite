@@ -48,6 +48,13 @@ working exactly as before.
   `PROD`, `B`, …). The color follows the code automatically. Select several
   cells, type, and press **Ctrl/Cmd + Enter** to fill them all at once.
   Everything after 5am is hand-editable.
+- **Moving a break works either way.** Type a new time in **BREAK** or
+  **15 MIN** (`1:00`, `1p` and `1:00 PM` all work), and that person's **B**
+  cells move on the grid; the role they had there fills the old slot.
+  Or move the B cells on the grid, and the break times update to match.
+  A time that can't be read, or that falls outside the person's shift, is
+  left as typed for you to fix. This needs the edit trigger, which the
+  first build after updating `Deployment.gs` installs automatically.
 - **Edits are safe from the auto-build.** It never touches a day that's
   already been built. **Build today's deployment** from the menu does rebuild
   it, and asks first. A rebuild replaces the grid, keeps the Hourly Tracker
@@ -105,7 +112,10 @@ A formula cell stays blank until its inputs are filled in, so there are no
 On Home, the signed-in person sees **Your shift today**: start and finish
 times, a colored timeline of their roles and breaks with a marker for "now",
 and each block listed with its times. It reads the Deployment tab as it
-stands, so a lead's edits show up on the next refresh (↻).
+stands. The app re-checks it whenever it's reopened or brought back on
+screen (if it's been more than 2 minutes), and every few minutes while it's
+open, so a lead's change reaches people's phones within a few minutes.
+↻ pulls it immediately.
 
 The app matches people by **initials** using the Staff Calendars tab. Someone
 added to the grid by hand needs a Staff Calendars row with matching initials
