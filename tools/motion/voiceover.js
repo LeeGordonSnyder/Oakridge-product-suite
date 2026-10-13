@@ -3,7 +3,8 @@
 
 /* Adds an ElevenLabs voiceover to the motion video.
 
-   ELEVENLABS_API_KEY=… node voiceover.js <in.mp4> <out.mp4>
+   node voiceover.js <in.mp4> <out.mp4>         # dry run: shows what it would cost
+   ELEVENLABS_API_KEY=… node voiceover.js <in.mp4> <out.mp4> --go
 
    The key is read from the environment only. Never put it in a file in
    this repo: the repo is public. Optional: ELEVENLABS_VOICE_ID,
@@ -18,14 +19,11 @@ const { execFileSync } = require("child_process");
 const KEY = process.env.ELEVENLABS_API_KEY;
 const VOICE = process.env.ELEVENLABS_VOICE_ID || "JBFqnCBsd6RMkjVDRZzb";
 const MODEL = process.env.ELEVENLABS_MODEL_ID || "eleven_multilingual_v2";
-const [input, output] = process.argv.slice(2);
+const GO = process.argv.includes("--go");
+const [input, output] = process.argv.slice(2).filter((a) => a !== "--go");
 
 if (!input || !output) {
-  console.error("usage: node voiceover.js <in.mp4> <out.mp4>");
-  process.exit(1);
-}
-if (!KEY) {
-  console.error("Set ELEVENLABS_API_KEY in the environment first.");
+  console.error("usage: node voiceover.js <in.mp4> <out.mp4> [--go]");
   process.exit(1);
 }
 
@@ -33,12 +31,31 @@ const lines = JSON.parse(fs.readFileSync(path.join(__dirname, "narration.json"),
 const cacheDir = path.join(__dirname, "vo");
 fs.mkdirSync(cacheDir, { recursive: true });
 
+const clipPath = (line, i) => {
+  const hash = crypto.createHash("sha1").update(`${VOICE}|${MODEL}|${line.text}`).digest("hex").slice(0, 10);
+  return path.join(cacheDir, `${String(i).padStart(2, "0")}-${hash}.mp3`);
+};
+
+// The free tier is small (about 1 credit per character), so nothing is sent
+// without --go. A dry run lists exactly which lines would be voiced.
+const todo = lines.filter((l, i) => !fs.existsSync(clipPath(l, i)));
+const chars = todo.reduce((n, l) => n + l.text.length, 0);
+console.log(`${todo.length} of ${lines.length} lines need voicing: ${chars} characters.`);
+if (!GO) {
+  for (const l of todo) console.log(`  ${l.at.toFixed(1).padStart(5)}s  ${l.text}`);
+  console.log("Dry run, nothing sent. Add --go to voice these lines.");
+  process.exit(0);
+}
+if (todo.length && !KEY) {
+  console.error("Set ELEVENLABS_API_KEY in the environment first.");
+  process.exit(1);
+}
+
 const duration = (file) =>
   parseFloat(execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file]).toString());
 
 async function voice(line, i) {
-  const hash = crypto.createHash("sha1").update(`${VOICE}|${MODEL}|${line.text}`).digest("hex").slice(0, 10);
-  const file = path.join(cacheDir, `${String(i).padStart(2, "0")}-${hash}.mp3`);
+  const file = clipPath(line, i);
   if (fs.existsSync(file)) return file;
   const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${VOICE}?output_format=mp3_44100_128`, {
     method: "POST",

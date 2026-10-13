@@ -31,7 +31,8 @@ voices each line with ElevenLabs and mixes the result under the finished
 video. It leaves the video frames untouched.
 
 ```bash
-ELEVENLABS_API_KEY=… node voiceover.js ../../docs/media/oakridge-product-suite-motion.mp4 out-vo.mp4
+node voiceover.js ../../docs/media/oakridge-product-suite-motion.mp4 out-vo.mp4        # dry run, sends nothing
+ELEVENLABS_API_KEY=… node voiceover.js ../../docs/media/oakridge-product-suite-motion.mp4 out-vo.mp4 --go
 ```
 
 Set the key as an environment secret, never in a file: this repo is public.
