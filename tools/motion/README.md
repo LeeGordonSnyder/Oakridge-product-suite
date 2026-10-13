@@ -22,3 +22,19 @@ for 6–9 seconds. Change a duration there and everything after it shifts.
 
 `assets/` holds the app screenshots used on the 3D phones. They come from
 `tools/guides/shots.js`; re-copy them after a UI change.
+
+## Voiceover
+
+`narration.json` holds the spoken lines. Each line has a start time and the
+time its panel ends, both taken from the TIMELINE block. `voiceover.js`
+voices each line with ElevenLabs and mixes the result under the finished
+video. It leaves the video frames untouched.
+
+```bash
+ELEVENLABS_API_KEY=… node voiceover.js ../../docs/media/oakridge-product-suite-motion.mp4 out-vo.mp4
+```
+
+Set the key as an environment secret, never in a file: this repo is public.
+`ELEVENLABS_VOICE_ID` picks a different voice. Clips are cached in `vo/`
+(git-ignored), so changing one line re-voices only that line. The script
+prints each clip's length and flags any that would run past its panel.
