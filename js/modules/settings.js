@@ -3,7 +3,7 @@
 /* ---------- Settings, roster & feedback ----------
    Everything administrative in one modal, reachable from any screen. */
 
-const APP_VERSION = "2.0.6-phase1";
+const APP_VERSION = "2.0.7-phase1";
 
 function openSettings() {
   document.getElementById("settings-url").value = getWebhookUrl();

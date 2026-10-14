@@ -172,13 +172,24 @@ async function loadSharedFloorRestock() {
 // a backend without the Deployment.gs add-on answers this request with some
 // other sheet's rows, so only a { deployment } object is accepted, and it
 // never counts toward "fully synced".
+// The last reason the deployment couldn't be read, shown on Home when there's
+// nothing saved to fall back on.
+let deploymentError = "";
+
 async function loadSharedDeployment() {
   try {
     const data = await fetchFromSheet("deployment", { retries: 1 });
     if (!data || Array.isArray(data) || !("deployment" in data)) return false;
+    deploymentError = "";
+    const saved = loadJSON(STORE.deployment, null);
+    // "No Deployment tab" never replaces one already on this phone: the tab can
+    // be missing for a moment (renamed, or an older build swapping it in).
+    // The next pull tries again.
+    if (!data.deployment && saved && saved.deployment) return true;
     saveJSON(STORE.deployment, { deployment: data.deployment, codes: data.codes || [], fetchedAt: new Date().toISOString() });
     return true;
   } catch (e) {
+    deploymentError = e.message || "couldn't reach the sheet";
     return false;
   }
 }

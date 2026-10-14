@@ -299,7 +299,6 @@ function deployBlocksFromSlots_(slots) {
 
 /* ===================== building the day (pure) ===================== */
 
-// people: [{ initials, name, ics }] -> roster sorted by start time, with breaks
 /* ---------- keeping the break columns and the grid's B cells in step ---------- */
 
 // "12:30p", "12:30 pm", "1p", "13:15" → minutes since midnight. A time with
@@ -360,6 +359,7 @@ function deployMoveBreaksInSlots_(slots, b30, b15a, b15b) {
   return out;
 }
 
+// people: [{ initials, name, ics }] -> roster sorted by start time, with breaks
 function deployBuildRoster_(people, dayKey, codes) {
   const roster = [];
   for (const p of people) {
@@ -500,9 +500,12 @@ function deployWriteSheet_(dayKey, roster, codes) {
   // from the CARRY_OVER rows.
   let keep = cur ? deployReadTracker_(cur) : {};
   if (!sameDay) keep = Object.fromEntries(DEPLOY.TRACKER.CARRY_OVER.filter((l) => keep[l]).map((l) => [l, keep[l]]));
-  if (sameDay) ss.deleteSheet(cur);
-  else deployArchiveCurrent_(ss);
-  const sh = ss.insertSheet(DEPLOY.SHEET, 0);
+  // Built under a temporary name and swapped in at the end, so the app never
+  // finds the Deployment tab missing while a build is running.
+  const tmpName = DEPLOY.SHEET + " (building)";
+  const leftover = ss.getSheetByName(tmpName);
+  if (leftover) ss.deleteSheet(leftover);
+  const sh = ss.insertSheet(tmpName, 0);
   const C = DEPLOY.COL, n = deploySlotCount_();
   const lastGridCol = C.GRID + n - 1;
   const rows = Math.max(DEPLOY.MIN_STAFF_ROWS, roster.length + 4);
@@ -577,6 +580,9 @@ function deployWriteSheet_(dayKey, roster, codes) {
   sh.setRowHeights(DEPLOY.FIRST_STAFF_ROW, rows, 22);
   sh.setFrozenRows(DEPLOY.HEADER_ROW);
   sh.setFrozenColumns(2);
+  if (sameDay) ss.deleteSheet(cur);
+  else deployArchiveCurrent_(ss);
+  sh.setName(DEPLOY.SHEET);
   ss.setActiveSheet(sh);
 }
 

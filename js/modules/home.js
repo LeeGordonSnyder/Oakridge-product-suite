@@ -45,7 +45,8 @@ function fmtClock(min) {
 
 function myDeployment() {
   const saved = loadJSON(STORE.deployment, null);
-  if (!saved || !saved.deployment) return null;
+  if (!saved) return null;
+  if (!saved.deployment) return { d: null };
   const d = saved.deployment;
   const me = currentInitials().toUpperCase();
   const person = (d.people || []).find((p) => (p.initials || "").toUpperCase() === me) || null;
@@ -56,12 +57,20 @@ function myDeployment() {
 function renderShiftCard() {
   const el = document.getElementById("home-shift");
   const info = myDeployment();
+  const head = `<div class="shift-head"><span class="kicker-sm">Your shift today</span></div>`;
   if (!info) {
-    el.hidden = true; // backend not set up for deployments (yet)
+    // Nothing saved: either this sheet has no deployment add-on (stay hidden),
+    // or the request failed, which is worth saying.
+    el.hidden = !deploymentError;
+    if (deploymentError) el.innerHTML = `${head}<p class="hint">Couldn't load today's deployment (${escapeHtml(deploymentError)}). Tap ↻ to try again.</p>`;
     return;
   }
   el.hidden = false;
   const { d, person, codes, isToday } = info;
+  if (!d) {
+    el.innerHTML = `${head}<p class="hint">There's no Deployment tab in the sheet right now. Once a lead builds today's deployment, it shows here.</p>`;
+    return;
+  }
   if (!isToday) {
     el.innerHTML = `<div class="shift-head"><span class="kicker-sm">Your shift today</span></div>
       <p class="hint">Today's deployment hasn't been built yet${d.label ? ` (latest is ${escapeHtml(d.label)})` : ""}.</p>`;
