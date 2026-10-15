@@ -28,6 +28,7 @@ const STORE = {
   lastSync: "ops2.lastSync",
   floorView: "ops2.floorView",
   deployment: "ops2.deployment",
+  deploymentPick: "ops2.deploymentPick", // { initials: name } when two people share initials
 };
 
 const LEGACY_KEYS = {

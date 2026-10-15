@@ -1,8 +1,8 @@
 # Backend add-on: daily deployment from When I Work
 
 `Deployment.gs` adds a color-coded **Deployment** tab to the shared Google
-Sheet, built every morning from each person's When I Work calendar feed,
-and lets the app show each person their own shift for the day.
+Sheet, built every morning from the store's When I Work "entire schedule"
+calendar link, and lets the app show each person their own shift for the day.
 
 It is a separate file in the existing Apps Script project, plus **one line**
 in `Code.gs`. Nothing else in `Code.gs` changes, so the original app keeps
@@ -29,26 +29,15 @@ working exactly as before.
    **New version** → **Deploy**. Keep the same deployment, so the URL doesn't change.
 6. **Authorize.** Reload the Sheet. A new **Deployment** menu appears. Choose
    **Set up deployment tabs** and approve the permission prompt. The script now
-   needs to fetch the When I Work feeds (`UrlFetchApp`) and run the daily
+   needs to fetch the When I Work schedule (`UrlFetchApp`) and run the daily
    trigger.
-7. **Add everyone's feed.** On the new **Staff Calendars** tab, add one row per
-   person: their **initials** (same as on the app's sign-in screen), their
-   **name** as it should appear on the deployment, and their **When I Work
-   calendar link** (`webcal://app.wheniwork.com/calendar/….ics`). Each person
-   finds their link in When I Work's calendar sync / subscribe option.
-   **Or use one link for everyone.** A manager's When I Work account has an
+7. **Set the When I Work link.** A manager's When I Work account has an
    "entire schedule" calendar link (it ends in `/global.ics`). Choose
-   **Deployment → Use a full-schedule link…** and paste it. Builds then come
-   from that one link, and Staff Calendars only needs **initials and names**,
-   with the link column left empty. Each **name must match When I Work
-   exactly** (e.g. "Li Snyder"), since that's how shifts are matched to
-   people. The menu lists anyone on the schedule who isn't on Staff Calendars
-   yet. They still appear on the deployment, but can't see their shift in the
-   app until they have a row. The link covers about the next 4 weeks. If it
-   ever fails, the build falls back to each person's own link.
+   **Deployment → Set the When I Work link…** and paste it. It's checked and
+   then stored in the script, not in the sheet. The confirmation says how many
+   people it found, and warns you if any two of them share initials (see
+   below). The link covers about the next 4 weeks.
 8. **Build the first day.** Choose **Deployment → Build today's deployment**.
-   Check the *Status* column on Staff Calendars for anyone whose feed couldn't
-   be read.
 9. **Turn on the daily build.** Choose **Deployment → Turn on daily auto-build**.
    From then on the tab builds itself around 5am every day.
 
@@ -127,15 +116,20 @@ screen (if it's been more than 2 minutes), and every few minutes while it's
 open, so a lead's change reaches people's phones within a few minutes.
 ↻ pulls it immediately.
 
-The app matches people by **initials** using the Staff Calendars tab. Someone
-added to the grid by hand needs a Staff Calendars row with matching initials
-and name for the app to find them; the link column can stay empty.
+The app matches people by **initials taken from their name on the grid**:
+the first letter of the first and last names, so "Li Snyder" is LS. This
+matches the initials people sign in with. Someone a lead adds to the grid by
+hand is matched the same way.
+
+If two people on the day's grid share initials (say, two "JV"s), the app
+asks each of them once which name is theirs and remembers it on that phone.
+A "Not you?" link undoes the choice. The build and the link setup both point
+out shared initials, so nothing needs setting up for it.
 
 ## Privacy
 
-A When I Work calendar link lets anyone who has it see that person's schedule.
-The full-schedule link shows **everyone's**. It's kept in the script's
-properties, not in the sheet, and only a script editor can see it. Personal
-links live on the Staff Calendars tab. The app never receives either kind.
-Keep that tab to leads. If a link is ever shared by mistake, the person can
-reset it in When I Work and paste the new one in.
+The "entire schedule" link lets anyone who has it see **everyone's**
+schedule. It's kept in the script's properties, not in the sheet, so only
+script editors can see it, and the app never receives it. If it's ever
+shared by mistake, the manager can reset it in When I Work and set the new
+one with **Deployment → Set the When I Work link…**.

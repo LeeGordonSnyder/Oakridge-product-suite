@@ -48,7 +48,7 @@ Outside tolerance / Not saved).
 
 - [x] `backend/Deployment.gs`: a separate Apps Script file plus a one-line hook,
       so the original app is unaffected. It builds a color-coded **Deployment**
-      tab each morning from everyone's When I Work feed, places breaks
+      tab each morning from the store's When I Work schedule link, places breaks
       automatically under the floor-coverage rules, and stays hand-editable.
       Setup steps are in `backend/README.md`.
 - [x] **Hourly Tracker** under the grid: sales target, total, AOV, UPT,

@@ -35,7 +35,7 @@ function homeKpis() {
 /* ---------- Your shift today ----------
    Read from the Deployment tab in the sheet (built each morning from When I
    Work, then edited by leads as the day changes), matched on the signed-in
-   person's initials via the sheet's "Staff Calendars" tab. */
+   person's initials, taken from their When I Work name ("Li Snyder" → LS). */
 
 function fmtClock(min) {
   const h24 = Math.floor(min / 60), m = min % 60;
@@ -49,9 +49,14 @@ function myDeployment() {
   if (!saved.deployment) return { d: null };
   const d = saved.deployment;
   const me = currentInitials().toUpperCase();
-  const person = (d.people || []).find((p) => (p.initials || "").toUpperCase() === me) || null;
+  const mine = (d.people || []).filter((p) => (p.initials || "").toUpperCase() === me);
+  // Two people with the same initials: use the name picked on this phone,
+  // or ask.
+  const picked = loadJSON(STORE.deploymentPick, {})[me];
+  const person = mine.length === 1 ? mine[0] : mine.find((p) => p.name === picked) || null;
+  const choices = !person && mine.length > 1 ? mine.map((p) => p.name) : null;
   const codes = Object.fromEntries((saved.codes || []).map((c) => [c.code, c]));
-  return { d, person, codes, isToday: d.date === todayISO() };
+  return { d, person, choices, picked: mine.length > 1, codes, isToday: d.date === todayISO() };
 }
 
 function renderShiftCard() {
@@ -66,7 +71,7 @@ function renderShiftCard() {
     return;
   }
   el.hidden = false;
-  const { d, person, codes, isToday } = info;
+  const { d, person, choices, picked, codes, isToday } = info;
   if (!d) {
     el.innerHTML = `${head}<p class="hint">There's no Deployment tab in the sheet right now. Once a lead builds today's deployment, it shows here.</p>`;
     return;
@@ -76,9 +81,14 @@ function renderShiftCard() {
       <p class="hint">Today's deployment hasn't been built yet${d.label ? ` (latest is ${escapeHtml(d.label)})` : ""}.</p>`;
     return;
   }
+  if (choices) {
+    el.innerHTML = `${head}<p class="hint">${choices.length} people on today's deployment have your initials. Which one are you? This phone will remember.</p>
+      <div class="chips">${choices.map((n) => `<button type="button" class="chip" data-action="pick-shift" data-name="${escapeHtml(n)}">${escapeHtml(n)}</button>`).join("")}</div>`;
+    return;
+  }
   if (!person || !person.blocks.length) {
     el.innerHTML = `<div class="shift-head"><span class="kicker-sm">Your shift today</span></div>
-      <p class="hint">You're not on today's deployment. If that's wrong, check your initials are on the “Staff Calendars” tab, or ask a lead.</p>`;
+      <p class="hint">You're not on today's deployment. If that's wrong, ask a lead: your sign-in initials need to match your name on it (Li Snyder → LS).</p>`;
     return;
   }
   const now = (() => { const t = new Date(); return t.getHours() * 60 + t.getMinutes(); })();
@@ -112,7 +122,7 @@ function renderShiftCard() {
     .join("");
   el.innerHTML = `
     <div class="shift-head">
-      <span class="kicker-sm">Your shift today · ${escapeHtml(d.label || "")}</span>
+      <span class="kicker-sm">Your shift today · ${escapeHtml(d.label || "")}${picked ? ` · ${escapeHtml(person.name)} <button type="button" class="link-btn" data-action="unpick-shift">Not you?</button>` : ""}</span>
       <span class="hint">${escapeHtml(status)}</span>
     </div>
     <div class="shift-times"><strong>${fmtClock(person.start)}</strong> – <strong>${fmtClock(person.end)}</strong>
@@ -120,6 +130,15 @@ function renderShiftCard() {
     <div class="shift-bar">${bar}${marker}</div>
     <div class="shift-axis"><span>${fmtClock(person.start)}</span><span>${fmtClock(person.end)}</span></div>
     <ul class="shift-blocks">${rows}</ul>`;
+}
+
+function setShiftPick(name) {
+  const picks = loadJSON(STORE.deploymentPick, {});
+  const me = currentInitials().toUpperCase();
+  if (name) picks[me] = name;
+  else delete picks[me];
+  saveJSON(STORE.deploymentPick, picks);
+  renderShiftCard();
 }
 
 function formatDuration(min) {
@@ -134,6 +153,8 @@ registerView("home", {
       "quick-count": () => goTo("counts", startCountScan),
       "quick-packslip": () => goTo("consol", startBoxCloseScan),
       "quick-boxes": () => goTo("receiving", startReceivingScan),
+      "pick-shift": (el) => setShiftPick(el.dataset.name),
+      "unpick-shift": () => setShiftPick(null),
     });
   },
 
