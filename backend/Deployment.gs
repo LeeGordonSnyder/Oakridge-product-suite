@@ -17,7 +17,7 @@
    Tabs it uses (created by Deployment → Set up deployment tabs):
      Deployment Codes  — Code | Meaning | Fill | Text | When I Work positions
      Deployment        — today's grid (rebuilt each morning, editable by hand)
-     Deployment YYYY-MM-DD — previous days, kept for DEPLOY.ARCHIVE_KEEP days
+     Deployment YYYY-MM-DD — previous days, hidden, kept DEPLOY.ARCHIVE_KEEP_DAYS days
 
    The grid is the source of truth once it's built: leads can retype any
    cell (FL, PG, PROD, B …) and the colors update by themselves; the app
@@ -29,7 +29,7 @@ const DEPLOY = {
   SHEET: "Deployment",
   CODES_SHEET: "Deployment Codes",
   ARCHIVE_PREFIX: "Deployment ",
-  ARCHIVE_KEEP: 14,
+  ARCHIVE_KEEP_DAYS: 7, // archived days are hidden, then deleted once older than this
   OPERATING_HOURS: "10am – 9pm",
   // Grid: 15-minute slots from 8:00am to 10:00pm
   GRID_START_MIN: 8 * 60,
@@ -517,9 +517,27 @@ function deployArchiveCurrent_(ss) {
   } else {
     ss.deleteSheet(cur);
   }
-  // keep the newest ARCHIVE_KEEP archives
-  const archives = ss.getSheets().map((s) => s.getName()).filter((n) => /^Deployment \d{4}-\d{2}-\d{2}$/.test(n)).sort().reverse();
-  archives.slice(DEPLOY.ARCHIVE_KEEP).forEach((n) => ss.deleteSheet(ss.getSheetByName(n)));
+}
+
+// Archive tab names older than keepDays before todayKey ("YYYY-MM-DD").
+function deployExpiredArchives_(names, todayKey, keepDays) {
+  const [y, m, d] = todayKey.split("-").map(Number);
+  const cutoff = new Date(Date.UTC(y, m - 1, d - keepDays)).toISOString().slice(0, 10);
+  const re = new RegExp("^" + DEPLOY.ARCHIVE_PREFIX + "(\\d{4}-\\d{2}-\\d{2})$");
+  return names.filter((n) => { const hit = n.match(re); return hit && hit[1] < cutoff; });
+}
+
+// Keeps the tab bar to today's deployment: every archived day is hidden
+// (still there under View → Hidden sheets), and deleted after
+// ARCHIVE_KEEP_DAYS.
+function deployTidyArchives_(ss, todayKey) {
+  const re = new RegExp("^" + DEPLOY.ARCHIVE_PREFIX + "\\d{4}-\\d{2}-\\d{2}$");
+  const sheets = ss.getSheets().filter((sh) => re.test(sh.getName()));
+  const expired = deployExpiredArchives_(sheets.map((sh) => sh.getName()), todayKey, DEPLOY.ARCHIVE_KEEP_DAYS);
+  for (const sh of sheets) {
+    if (expired.indexOf(sh.getName()) >= 0) ss.deleteSheet(sh);
+    else if (!sh.isSheetHidden()) sh.hideSheet();
+  }
 }
 
 function deployWriteSheet_(dayKey, roster, codes) {
@@ -617,6 +635,7 @@ function deployWriteSheet_(dayKey, roster, codes) {
   else deployArchiveCurrent_(ss);
   sh.setName(DEPLOY.SHEET);
   ss.setActiveSheet(sh);
+  deployTidyArchives_(ss, deployTodayKey_() > dayKey ? deployTodayKey_() : dayKey);
 }
 
 /* ---------- edits on the day ---------- */
@@ -908,5 +927,5 @@ function getDeploymentForApp() {
 
 // Node test harness hook (ignored by Apps Script)
 if (typeof module !== "undefined") {
-  module.exports = { DEPLOY, DEFAULT_DEPLOY_CODES, deployParseIcs_, deployBlocksForDay_, deployBuildRoster_, deployScheduleBreaks_, deploySlotsFor_, deployBlocksFromSlots_, deployFmtTime_, deployDayLabel_, deployRequiredBreaks_, deployLocalParts_, DEPLOY_TRACKER_ROWS, deployTrackerValues_, deployWriteTracker_, deployReadTracker_, deployHourCol_, deployColLetter_, deployWriteSheet_, getDeploymentForApp, deployParseBreakTime_, deployBreaksFromSlots_, deployMoveBreaksInSlots_, deployOnEdit, deploySplitGlobalIcs_, deployBuild, deployInitials_, deployInitialsClashes_, deployWriteNotes_, deployReadNotes_ };
+  module.exports = { DEPLOY, DEFAULT_DEPLOY_CODES, deployParseIcs_, deployBlocksForDay_, deployBuildRoster_, deployScheduleBreaks_, deploySlotsFor_, deployBlocksFromSlots_, deployFmtTime_, deployDayLabel_, deployRequiredBreaks_, deployLocalParts_, DEPLOY_TRACKER_ROWS, deployTrackerValues_, deployWriteTracker_, deployReadTracker_, deployHourCol_, deployColLetter_, deployWriteSheet_, getDeploymentForApp, deployParseBreakTime_, deployBreaksFromSlots_, deployMoveBreaksInSlots_, deployOnEdit, deploySplitGlobalIcs_, deployBuild, deployInitials_, deployInitialsClashes_, deployWriteNotes_, deployReadNotes_, deployExpiredArchives_, deployTidyArchives_ };
 }

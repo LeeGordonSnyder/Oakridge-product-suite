@@ -58,8 +58,11 @@ working exactly as before.
   already been built. **Build today's deployment** from the menu does rebuild
   it, and asks first. A rebuild replaces the grid, keeps the Hourly Tracker
   numbers, and clears anything else added to the tab by hand.
-- **Previous days are kept.** Yesterday's tab is renamed `Deployment YYYY-MM-DD`
-  and kept for 14 days.
+- **Previous days are kept, out of the way.** When a new day is built,
+  yesterday's tab is renamed `Deployment YYYY-MM-DD` and **hidden**, so the
+  tab bar only shows today. To look at an earlier day, open **View → Hidden
+  sheets** (or right-click the tab bar) and choose it. Hidden days older than
+  7 days are deleted automatically (`DEPLOY.ARCHIVE_KEEP_DAYS`).
 - **Breaks are placed automatically**, by shift length:
 
   | Shift length | Breaks |
@@ -102,7 +105,7 @@ A formula cell stays blank until its inputs are filled in, so there are no
   over from the previous day. Change which rows carry over in
   `DEPLOY.TRACKER.CARRY_OVER`.
 - **Rebuilding the same day:** every number already typed in is kept.
-- **Yesterday's numbers** stay on its archived `Deployment YYYY-MM-DD` tab.
+- **Yesterday's numbers** stay on its archived (hidden) `Deployment YYYY-MM-DD` tab.
 - **The hours** are set by `DEPLOY.TRACKER.FIRST_HOUR` and `LAST_HOUR`.
 
 ## Hourly Notes
@@ -113,7 +116,7 @@ inside it, and you can drag the row taller if a day needs more room.
 
 - **Rebuilding the same day** keeps every note.
 - **A new day** starts with empty boxes. Yesterday's notes stay on its
-  archived `Deployment YYYY-MM-DD` tab.
+  archived (hidden) `Deployment YYYY-MM-DD` tab.
 - **Box height** is set by `DEPLOY.NOTES.BOX_HEIGHT`.
 
 ## What the app shows
