@@ -44,12 +44,12 @@ const DEPLOY = {
   // Deployment menu. Kept out of the sheet: it shows everyone's schedule.
   GLOBAL_FEED_PROP: "WIW_GLOBAL_FEED",
   AUTO_BUILD_HOUR: 5,
-  // Break policy — same rules as the WiW → deployment workbook tool:
-  //   ≤ 5h: none · 5–6h: one 15 · 6–8.5h: 15 + 30 · ≥ 8.5h: 15 + 30 + 15
+  // Break policy by shift length:
+  //   under 5h: none · 5h–under 8h: one 15 · 8h–under 8.5h: 15 + 30 · 8.5h+: 15 + 30 + 15
   BREAKS: {
-    NO_BREAK_MAX_HOURS: 5.0,
-    ONE_FIFTEEN_MAX_HOURS: 6.0,
-    FIFTEEN_AND_THIRTY_MAX_HOURS: 8.5,
+    ONE_FIFTEEN_FROM_HOURS: 5.0,
+    FIFTEEN_AND_THIRTY_FROM_HOURS: 8.0,
+    TWO_FIFTEENS_AND_THIRTY_FROM_HOURS: 8.5,
     EDGE_BUFFER_MIN: 30, // no breaks in the first/last 30 min of a shift
     STEP_MIN: 15, // breaks land on the 15-minute grid
     MIN_ON_FLOOR: 2, // never fewer than 2 people working
@@ -244,13 +244,14 @@ function deployBlocksForDay_(events, dayKey, codes) {
 
 function deployRequiredBreaks_(hours) {
   const B = DEPLOY.BREAKS;
-  if (hours <= B.NO_BREAK_MAX_HOURS) return [];
-  if (hours < B.ONE_FIFTEEN_MAX_HOURS) return [15];
-  if (hours < B.FIFTEEN_AND_THIRTY_MAX_HOURS) return [15, 30];
-  return [15, 30, 15];
+  if (hours >= B.TWO_FIFTEENS_AND_THIRTY_FROM_HOURS) return [15, 30, 15];
+  if (hours >= B.FIFTEEN_AND_THIRTY_FROM_HOURS) return [15, 30];
+  if (hours >= B.ONE_FIFTEEN_FROM_HOURS) return [15];
+  return [];
 }
 
-// Places every person's breaks, spaced evenly through their shift, while
+// Places every person's breaks, spaced evenly through their shift and
+// staggered so people aren't on break at the same time, while
 // keeping at least MIN_ON_FLOOR people and (when one's scheduled) a Floor
 // Lead on the floor. If no slot satisfies the rules, the break is placed
 // as close to ideal as possible and flagged for a lead to look at.
@@ -277,6 +278,10 @@ function deployScheduleBreaks_(roster) {
     return true;
   };
   const snap = (m) => Math.round(m / B.STEP_MIN) * B.STEP_MIN;
+  const othersOnBreak = (start, dur) => {
+    for (let m = start; m < start + dur; m += 5) if (onBreak[m] && onBreak[m].size) return true;
+    return false;
+  };
 
   const order = roster.slice().sort((a, b) =>
     deployRequiredBreaks_((b.end - b.start) / 60).reduce((x, y) => x + y, 0) - deployRequiredBreaks_((a.end - a.start) / 60).reduce((x, y) => x + y, 0) || a.start - b.start);
@@ -290,13 +295,23 @@ function deployScheduleBreaks_(roster) {
     durs.forEach((dur, i) => {
       const center = ws + ((we - ws) * (i + 1)) / (durs.length + 1);
       const target = Math.max(ws, Math.min(snap(center - dur / 2), we - dur));
-      let found = null;
-      for (let r = 0; r <= we - ws && found === null; r += B.STEP_MIN) {
-        for (const c of r === 0 ? [target] : [target + r, target - r]) {
-          if (c < ws || c + dur > we) continue;
-          if (valid(p, c, dur, placed)) { found = c; break; }
+      // Nearest valid slot to the target where nobody else is on break:
+      // first within half the spacing between this person's breaks (so they
+      // stay spread through the shift), then anywhere in the shift. Only if
+      // there's no such slot does a break overlap someone else's.
+      const search = (radius, alone) => {
+        for (let r = 0; r <= radius; r += B.STEP_MIN) {
+          for (const c of r === 0 ? [target] : [target + r, target - r]) {
+            if (c < ws || c + dur > we) continue;
+            if (alone && othersOnBreak(c, dur)) continue;
+            if (valid(p, c, dur, placed)) return c;
+          }
         }
-      }
+        return null;
+      };
+      let found = search((we - ws) / (durs.length + 1) / 2, true);
+      if (found === null) found = search(we - ws, true);
+      if (found === null) found = search(we - ws, false);
       placed.push({ start: found === null ? target : found, duration: dur, flagged: found === null });
     });
     p.breaks = placed.sort((a, b) => a.start - b.start);

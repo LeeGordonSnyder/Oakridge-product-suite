@@ -60,15 +60,14 @@ working exactly as before.
   numbers, and clears anything else added to the tab by hand.
 - **Previous days are kept.** Yesterday's tab is renamed `Deployment YYYY-MM-DD`
   and kept for 14 days.
-- **Breaks are placed automatically.** The rules are the same as the WiW
-  deployment workbook tool:
+- **Breaks are placed automatically**, by shift length:
 
   | Shift length | Breaks |
   |---|---|
-  | 5h or less | none |
-  | over 5h and under 6h | one 15 |
-  | 6h to under 8.5h | a 15 and a 30 |
-  | 8.5h or more | 15 + 30 + 15 |
+  | under 5h | none |
+  | 5h to under 8h | one 15 |
+  | 8h to under 8.5h | a 15 and a 30 |
+  | 8.5h or more | two 15s and a 30 |
 
   No break falls in the first or last 30 minutes of a shift. At least two
   people stay on the floor, and at least one Floor Lead whenever one is
