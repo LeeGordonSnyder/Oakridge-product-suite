@@ -54,6 +54,8 @@ Outside tolerance / Not saved).
 - [x] **Hourly Tracker** under the grid: sales target, total, AOV, UPT,
       transactions and traffic per hour, with Sales % and Conversion
       formulas and a CLOSE column. It survives a same-day rebuild.
+- [x] **Hourly Notes** under the tracker: one large wrapping text box per
+      hour, kept on a same-day rebuild.
 - [x] App: a **Your shift today** card on Home (roles, times, breaks, a "now"
       marker), read from the Deployment tab. It stays hidden until the add-on
       is installed.

@@ -105,6 +105,17 @@ A formula cell stays blank until its inputs are filled in, so there are no
 - **Yesterday's numbers** stay on its archived `Deployment YYYY-MM-DD` tab.
 - **The hours** are set by `DEPLOY.TRACKER.FIRST_HOUR` and `LAST_HOUR`.
 
+## Hourly Notes
+
+Under the tracker, **Hourly Notes** has one large text box per hour, from 8am
+to 9pm, each under its hour on the grid. Click a box and type. Text wraps
+inside it, and you can drag the row taller if a day needs more room.
+
+- **Rebuilding the same day** keeps every note.
+- **A new day** starts with empty boxes. Yesterday's notes stay on its
+  archived `Deployment YYYY-MM-DD` tab.
+- **Box height** is set by `DEPLOY.NOTES.BOX_HEIGHT`.
+
 ## What the app shows
 
 On Home, the signed-in person sees **Your shift today**: start and finish

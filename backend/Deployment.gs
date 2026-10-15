@@ -64,6 +64,11 @@ const DEPLOY = {
     LAST_HOUR: 20, // 8pm
     CARRY_OVER: ["% of sales"], // rows copied from the previous day's tracker
   },
+  // Hourly Notes, under the tracker: one tall text box per grid hour.
+  NOTES: {
+    TITLE: "Hourly Notes",
+    BOX_HEIGHT: 160, // px; the boxes wrap, and a row can be dragged taller
+  },
 };
 
 // label, kind, number format, CLOSE column. "input" rows are typed in (white),
@@ -525,6 +530,7 @@ function deployWriteSheet_(dayKey, roster, codes) {
   // from the CARRY_OVER rows.
   let keep = cur ? deployReadTracker_(cur) : {};
   if (!sameDay) keep = Object.fromEntries(DEPLOY.TRACKER.CARRY_OVER.filter((l) => keep[l]).map((l) => [l, keep[l]]));
+  const keepNotes = sameDay ? deployReadNotes_(cur) : []; // notes are for the day they were written
   // Built under a temporary name and swapped in at the end, so the app never
   // finds the Deployment tab missing while a build is running.
   const tmpName = DEPLOY.SHEET + " (building)";
@@ -595,7 +601,9 @@ function deployWriteSheet_(dayKey, roster, codes) {
     sh.getRange(DEPLOY.HEADER_ROW + 1 + i, lc + 1).setValue(c.label);
   });
 
-  deployWriteTracker_(sh, DEPLOY.FIRST_STAFF_ROW + rows + 1, keep);
+  const trackerTop = DEPLOY.FIRST_STAFF_ROW + rows + 1;
+  deployWriteTracker_(sh, trackerTop, keep);
+  deployWriteNotes_(sh, trackerTop + DEPLOY_TRACKER_ROWS.length + 2, keepNotes);
 
   // Sizing
   sh.setColumnWidth(1, 110); sh.setColumnWidth(2, 100);
@@ -745,6 +753,57 @@ function deployReadTracker_(sh) {
   return out;
 }
 
+/* ---------- Hourly Notes ---------- */
+
+function deployNoteHours_() {
+  const hours = [];
+  for (let m = DEPLOY.GRID_START_MIN; m < DEPLOY.GRID_END_MIN; m += 60) hours.push(m / 60);
+  return hours;
+}
+
+// Title bar, an hour header row, and one tall wrapping box per hour, each
+// lined up under that hour on the grid. notes = text per hour, in order.
+function deployWriteNotes_(sh, top, notes) {
+  const span = 60 / DEPLOY.SLOT_MIN, lastCol = DEPLOY.COL.GRID + deploySlotCount_() - 1;
+  const hours = deployNoteHours_();
+  const pink = "#b5577a", grey = "#d9d9d9", filler = "#f4eff1";
+
+  sh.getRange(top, 1, 1, lastCol).setBackground(pink);
+  sh.getRange(top, 3, 1, lastCol - 2).merge().setValue(DEPLOY.NOTES.TITLE) // A–B are frozen
+    .setFontColor("#ffffff").setFontWeight("bold").setFontSize(12).setHorizontalAlignment("center");
+
+  const head = new Array(lastCol).fill(""), body = new Array(lastCol).fill("");
+  head[0] = "Hour";
+  body[0] = "Notes";
+  hours.forEach((h, i) => {
+    const c = deployHourCol_(h);
+    head[c - 1] = deployFmtTime_(h * 60).replace("a", "am").replace("p", "pm");
+    body[c - 1] = notes[i] || "";
+  });
+  const block = sh.getRange(top + 1, 1, 2, lastCol);
+  block.setNumberFormat("@").setValues([head, body])
+    .setFontFamily("Arial").setFontSize(10)
+    .setBorder(true, true, true, true, true, true, "#5b4a4e", SpreadsheetApp.BorderStyle.SOLID);
+  for (const h of hours) sh.getRange(top + 1, deployHourCol_(h), 2, span).mergeAcross();
+
+  sh.getRange(top + 1, 1, 1, lastCol).setBackground(grey).setFontWeight("bold").setHorizontalAlignment("center");
+  sh.getRange(top + 2, 1).setFontWeight("bold").setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sh.getRange(top + 1, 2, 2, DEPLOY.COL.GRID - 2).setBackground(filler);
+  sh.getRange(top + 2, DEPLOY.COL.GRID, 1, lastCol - DEPLOY.COL.GRID + 1)
+    .setWrap(true).setVerticalAlignment("top").setHorizontalAlignment("left");
+  sh.setRowHeight(top, 26);
+  sh.setRowHeight(top + 1, 22);
+  sh.setRowHeight(top + 2, DEPLOY.NOTES.BOX_HEIGHT);
+}
+
+// The text in each hour's box, in hour order ([] if the tab has no notes).
+function deployReadNotes_(sh) {
+  const hit = sh.createTextFinder(DEPLOY.NOTES.TITLE).matchEntireCell(true).findNext();
+  if (!hit) return [];
+  const row = sh.getRange(hit.getRow() + 2, 1, 1, DEPLOY.COL.GRID + deploySlotCount_() - 1).getValues()[0];
+  return deployNoteHours_().map((h) => row[deployHourCol_(h) - 1]);
+}
+
 function deployTrackerRow_(sh) {
   const hit = sh.createTextFinder(DEPLOY.TRACKER.TITLE).matchEntireCell(true).findNext();
   return hit ? hit.getRow() : 0;
@@ -849,5 +908,5 @@ function getDeploymentForApp() {
 
 // Node test harness hook (ignored by Apps Script)
 if (typeof module !== "undefined") {
-  module.exports = { DEPLOY, DEFAULT_DEPLOY_CODES, deployParseIcs_, deployBlocksForDay_, deployBuildRoster_, deployScheduleBreaks_, deploySlotsFor_, deployBlocksFromSlots_, deployFmtTime_, deployDayLabel_, deployRequiredBreaks_, deployLocalParts_, DEPLOY_TRACKER_ROWS, deployTrackerValues_, deployWriteTracker_, deployReadTracker_, deployHourCol_, deployColLetter_, deployWriteSheet_, getDeploymentForApp, deployParseBreakTime_, deployBreaksFromSlots_, deployMoveBreaksInSlots_, deployOnEdit, deploySplitGlobalIcs_, deployBuild, deployInitials_, deployInitialsClashes_ };
+  module.exports = { DEPLOY, DEFAULT_DEPLOY_CODES, deployParseIcs_, deployBlocksForDay_, deployBuildRoster_, deployScheduleBreaks_, deploySlotsFor_, deployBlocksFromSlots_, deployFmtTime_, deployDayLabel_, deployRequiredBreaks_, deployLocalParts_, DEPLOY_TRACKER_ROWS, deployTrackerValues_, deployWriteTracker_, deployReadTracker_, deployHourCol_, deployColLetter_, deployWriteSheet_, getDeploymentForApp, deployParseBreakTime_, deployBreaksFromSlots_, deployMoveBreaksInSlots_, deployOnEdit, deploySplitGlobalIcs_, deployBuild, deployInitials_, deployInitialsClashes_, deployWriteNotes_, deployReadNotes_ };
 }
