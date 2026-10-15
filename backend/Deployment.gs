@@ -97,7 +97,7 @@ const DEFAULT_DEPLOY_CODES = [
   ["CLOSE", "Close", "#FFF200", "#000000", "Close"],
   ["TRAIN-E", "Trainee", "#FF0090", "#FFFFFF", ""],
   ["TRAINER", "Trainer", "#F8BBD0", "#000000", ""],
-  ["ADMIN", "Admin", "#607D8B", "#FFFFFF", "Admin"],
+  ["ADMIN", "Admin", "#E53935", "#FFFFFF", "Admin"],
   ["B", "Break", "#D9D9D9", "#C0392B", ""],
 ];
 
