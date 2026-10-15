@@ -36,6 +36,16 @@ working exactly as before.
    **name** as it should appear on the deployment, and their **When I Work
    calendar link** (`webcal://app.wheniwork.com/calendar/….ics`). Each person
    finds their link in When I Work's calendar sync / subscribe option.
+   **Or use one link for everyone.** A manager's When I Work account has an
+   "entire schedule" calendar link (it ends in `/global.ics`). Choose
+   **Deployment → Use a full-schedule link…** and paste it. Builds then come
+   from that one link, and Staff Calendars only needs **initials and names**,
+   with the link column left empty. Each **name must match When I Work
+   exactly** (e.g. "Li Snyder"), since that's how shifts are matched to
+   people. The menu lists anyone on the schedule who isn't on Staff Calendars
+   yet. They still appear on the deployment, but can't see their shift in the
+   app until they have a row. The link covers about the next 4 weeks. If it
+   ever fails, the build falls back to each person's own link.
 8. **Build the first day.** Choose **Deployment → Build today's deployment**.
    Check the *Status* column on Staff Calendars for anyone whose feed couldn't
    be read.
@@ -124,6 +134,8 @@ and name for the app to find them; the link column can stay empty.
 ## Privacy
 
 A When I Work calendar link lets anyone who has it see that person's schedule.
-The links live only on the Staff Calendars tab; the app never receives them.
+The full-schedule link shows **everyone's**. It's kept in the script's
+properties, not in the sheet, and only a script editor can see it. Personal
+links live on the Staff Calendars tab. The app never receives either kind.
 Keep that tab to leads. If a link is ever shared by mistake, the person can
 reset it in When I Work and paste the new one in.

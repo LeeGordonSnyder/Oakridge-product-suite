@@ -38,6 +38,9 @@ const DEPLOY = {
   MIN_STAFF_ROWS: 16, // blank rows kept for people added by hand
   COL: { NAME: 1, SHIFT: 2, BREAK30: 3, BREAK15A: 4, BREAK15B: 5, GRID: 6 },
   FEED_CACHE_SECONDS: 1800,
+  // Script property holding the manager's "entire schedule" link, set from
+  // the Deployment menu. Kept out of the sheet: it shows everyone's schedule.
+  GLOBAL_FEED_PROP: "WIW_GLOBAL_FEED",
   AUTO_BUILD_HOUR: 5,
   // Break policy — same rules as the WiW → deployment workbook tool:
   //   ≤ 5h: none · 5–6h: one 15 · 6–8.5h: 15 + 30 · ≥ 8.5h: 15 + 30 + 15
@@ -92,6 +95,7 @@ const DEFAULT_DEPLOY_CODES = [
   ["CLOSE", "Close", "#FFF200", "#000000", "Close"],
   ["TRAIN-E", "Trainee", "#FF0090", "#FFFFFF", ""],
   ["TRAINER", "Trainer", "#F8BBD0", "#000000", ""],
+  ["ADMIN", "Admin", "#607D8B", "#FFFFFF", "Admin"],
   ["B", "Break", "#D9D9D9", "#C0392B", ""],
 ];
 
@@ -160,6 +164,20 @@ function deployIcsDate_(field) {
   const guess = new Date(Date.UTC(+y, +mo - 1, +d, +h, +mi, +s));
   const offsetMin = deployLocalParts_(guess).minutes - (+h * 60 + +mi);
   return new Date(guess.getTime() - (((offsetMin + 720) % 1440) - 720) * 60000);
+}
+
+// The "entire schedule" feed titles every shift
+// "Li Snyder (Shift as Product Guide at Arc'teryx Oakridge)". Split it into
+// one event list per When I Work name, each titled like a personal feed.
+function deploySplitGlobalIcs_(text) {
+  const byName = {};
+  for (const ev of deployParseIcs_(text)) {
+    const m = ev.summary.match(/^(.+?) \((Shift as .+)\)$/);
+    if (!m) continue;
+    const name = m[1].trim();
+    (byName[name] = byName[name] || []).push({ start: ev.start, end: ev.end, summary: m[2] });
+  }
+  return byName;
 }
 
 // "Shift as Product Guide at Arc'teryx Oakridge" -> "Product Guide"
@@ -363,8 +381,8 @@ function deployMoveBreaksInSlots_(slots, b30, b15a, b15b) {
 function deployBuildRoster_(people, dayKey, codes) {
   const roster = [];
   for (const p of people) {
-    if (!p.ics) continue;
-    const blocks = deployBlocksForDay_(deployParseIcs_(p.ics), dayKey, codes);
+    if (!p.events && !p.ics) continue;
+    const blocks = deployBlocksForDay_(p.events || deployParseIcs_(p.ics), dayKey, codes);
     if (!blocks.length) continue;
     roster.push({ initials: p.initials, name: p.name || p.initials, blocks, start: blocks[0].start, end: blocks[blocks.length - 1].end });
   }
@@ -381,6 +399,7 @@ function onOpen() {
     .addItem("Build for another date…", "deployMenuBuildDate")
     .addSeparator()
     .addItem("Set up deployment tabs", "deploySetup")
+    .addItem("Use a full-schedule link…", "deployMenuSetGlobalFeed")
     .addItem("Turn on daily auto-build", "deployInstallTrigger")
     .addItem("Turn off daily auto-build", "deployRemoveTrigger")
     .addToUi();
@@ -454,21 +473,57 @@ function deployBuild(dayKey) {
   const staff = deployReadStaff_();
   const cal = ss.getSheetByName(DEPLOY.CAL_SHEET);
   const stamp = Utilities.formatDate(new Date(), DEPLOY.TZ, "MMM d, h:mm a");
+  const day = deployDayLabel_(dayKey);
+  const scheduled = (events) => deployBlocksForDay_(events, dayKey, codes).length
+    ? `OK — on the ${day} deployment` : `OK — not scheduled ${day}`;
+  const setStatus = (p, status) => { if (cal) cal.getRange(p.row, 4, 1, 2).setValues([[stamp, status]]); };
   const people = [];
-  for (const p of staff) {
-    let status;
-    if (!p.url) status = "No link yet";
-    else {
-      try {
-        const ics = deployFetchFeed_(p.url);
-        people.push({ ...p, ics });
-        const n = deployBlocksForDay_(deployParseIcs_(ics), dayKey, codes).length;
-        status = n ? `OK — on the ${deployDayLabel_(dayKey)} deployment` : `OK — not scheduled ${deployDayLabel_(dayKey)}`;
-      } catch (e) {
-        status = "Couldn't read feed: " + e.message;
+
+  // One link for everyone, if a manager's "entire schedule" link is set.
+  let byName = null, globalError = "";
+  const globalUrl = PropertiesService.getScriptProperties().getProperty(DEPLOY.GLOBAL_FEED_PROP);
+  if (globalUrl) {
+    try { byName = deploySplitGlobalIcs_(deployFetchFeed_(globalUrl)); }
+    catch (e) { globalError = e.message; }
+  }
+
+  if (byName) {
+    const key = (n) => String(n || "").trim().toLowerCase().replace(/\s+/g, " ");
+    const wiw = {};
+    Object.keys(byName).forEach((n) => (wiw[key(n)] = n));
+    const matched = new Set();
+    for (const p of staff) {
+      const name = wiw[key(p.name)];
+      if (!name) {
+        setStatus(p, `No shifts under "${p.name}" in the full schedule. If they're working, use their name exactly as When I Work shows it.`);
+        continue;
       }
+      matched.add(name);
+      people.push({ ...p, events: byName[name] });
+      setStatus(p, scheduled(byName[name]) + " (full schedule)");
     }
-    if (cal) cal.getRange(p.row, 4, 1, 2).setValues([[stamp, status]]);
+    // Everyone else on the schedule still goes on the deployment, under their
+    // When I Work name. The app can only show them their shift once they have
+    // a Staff Calendars row with matching initials and name.
+    for (const name of Object.keys(byName)) {
+      if (!matched.has(name)) people.push({ initials: "", name, events: byName[name] });
+    }
+  } else {
+    for (const p of staff) {
+      let status;
+      if (!p.url) status = "No link yet";
+      else {
+        try {
+          const ics = deployFetchFeed_(p.url);
+          people.push({ ...p, ics });
+          status = scheduled(deployParseIcs_(ics));
+        } catch (e) {
+          status = "Couldn't read feed: " + e.message;
+        }
+      }
+      if (globalError) status = `Full-schedule link failed (${globalError}), used this person's own link: ${status}`;
+      setStatus(p, status);
+    }
   }
   const roster = deployBuildRoster_(people, dayKey, codes);
   deployWriteSheet_(dayKey, roster, codes);
@@ -736,6 +791,36 @@ function deployMenuBuildToday() {
   SpreadsheetApp.getActive().toast(`Built today's deployment — ${roster.length} people scheduled.`);
 }
 
+// Stores (or clears) the manager's "entire schedule" link after checking it.
+function deployMenuSetGlobalFeed() {
+  const ui = SpreadsheetApp.getUi();
+  const props = PropertiesService.getScriptProperties();
+  const current = props.getProperty(DEPLOY.GLOBAL_FEED_PROP);
+  const r = ui.prompt("Full-schedule link",
+    (current ? "A full-schedule link is set. Paste a new one to replace it, or leave this empty and press OK to stop using it.\n\n"
+             : "Paste the When I Work \"entire schedule\" calendar link (…/global.ics). It's stored in the script, not in the sheet.\n\n") +
+    "With it, the deployment is built from this one link and the per-person links on Staff Calendars aren't needed.",
+    ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK) return;
+  const url = r.getResponseText().trim();
+  if (!url) {
+    props.deleteProperty(DEPLOY.GLOBAL_FEED_PROP);
+    ui.alert("Stopped using the full-schedule link. Builds use each person's own link again.");
+    return;
+  }
+  let byName;
+  try { byName = deploySplitGlobalIcs_(deployFetchFeed_(url)); }
+  catch (e) { ui.alert("Couldn't read that link: " + e.message); return; }
+  const names = Object.keys(byName);
+  if (!names.length) { ui.alert("That link worked, but it has no named shifts in it. Is it the \"entire schedule\" link?"); return; }
+  props.setProperty(DEPLOY.GLOBAL_FEED_PROP, url);
+  const staffNames = deployReadStaff_().map((p) => p.name.trim().toLowerCase().replace(/\s+/g, " "));
+  const missing = names.filter((n) => staffNames.indexOf(n.trim().toLowerCase().replace(/\s+/g, " ")) < 0);
+  ui.alert(`Saved. The link has shifts for ${names.length} people.` + (missing.length
+    ? `\n\nThese names aren't on Staff Calendars yet, so they'll show on the deployment but can't see their shift in the app: ${missing.join(", ")}.\n\nAdd a row for each (initials + the name exactly as shown), or rename an existing row to match.`
+    : ""));
+}
+
 function deployMenuBuildDate() {
   const ui = SpreadsheetApp.getUi();
   const r = ui.prompt("Build deployment for a date", "Date as YYYY-MM-DD (e.g. 2026-10-16):", ui.ButtonSet.OK_CANCEL);
@@ -800,5 +885,5 @@ function getDeploymentForApp() {
 
 // Node test harness hook (ignored by Apps Script)
 if (typeof module !== "undefined") {
-  module.exports = { DEPLOY, DEFAULT_DEPLOY_CODES, deployParseIcs_, deployBlocksForDay_, deployBuildRoster_, deployScheduleBreaks_, deploySlotsFor_, deployBlocksFromSlots_, deployFmtTime_, deployDayLabel_, deployRequiredBreaks_, deployLocalParts_, DEPLOY_TRACKER_ROWS, deployTrackerValues_, deployWriteTracker_, deployReadTracker_, deployHourCol_, deployColLetter_, deployWriteSheet_, getDeploymentForApp, deployParseBreakTime_, deployBreaksFromSlots_, deployMoveBreaksInSlots_, deployOnEdit };
+  module.exports = { DEPLOY, DEFAULT_DEPLOY_CODES, deployParseIcs_, deployBlocksForDay_, deployBuildRoster_, deployScheduleBreaks_, deploySlotsFor_, deployBlocksFromSlots_, deployFmtTime_, deployDayLabel_, deployRequiredBreaks_, deployLocalParts_, DEPLOY_TRACKER_ROWS, deployTrackerValues_, deployWriteTracker_, deployReadTracker_, deployHourCol_, deployColLetter_, deployWriteSheet_, getDeploymentForApp, deployParseBreakTime_, deployBreaksFromSlots_, deployMoveBreaksInSlots_, deployOnEdit, deploySplitGlobalIcs_, deployBuild };
 }
