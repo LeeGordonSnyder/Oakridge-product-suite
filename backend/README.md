@@ -63,6 +63,10 @@ working exactly as before.
   tab bar only shows today. To look at an earlier day, open **View → Hidden
   sheets** (or right-click the tab bar) and choose it. Hidden days older than
   7 days are deleted automatically (`DEPLOY.ARCHIVE_KEEP_DAYS`).
+- **Break cells a shift doesn't get are grey**, like the paper template. To
+  mark a break as taken, strike it through (Alt + Shift + 5 on Windows,
+  Cmd + Shift + X on a Mac). The
+  strike-through stays.
 - **Breaks are placed automatically**, by shift length:
 
   | Shift length | Breaks |
@@ -81,42 +85,99 @@ working exactly as before.
   example *Product Operations → PROD*). Edit it there. New codes and colors
   apply from the next build; colors on today's tab update when it's rebuilt.
 
+## Goals
+
+Across the top of every deployment:
+
+| Box | What it is |
+|---|---|
+| **Goal** (yellow) | Today's sales goal. Type it in each day. |
+| **Strive** | Goal × 1.4, worked out for you. |
+| **Week** | This week's goal. Type it in on any day, and it carries over to each new day until Sunday. Monday starts blank. |
+| **Month** | Set once with **Deployment → Set monthly goal…**, and it shows on every deployment that month. On the 1st of a new month it shows a red **UPDATE** until the new month's goal is set. |
+
+## Store hours and % of sales
+
+These two small tables sit on the **Deployment Codes** tab, to the right of
+the codes:
+
+- **Store hours**: when the store opens and closes each day of the week. The
+  Hourly Tracker and Hourly Notes have one column for each open hour, then
+  **CLOSE**.
+- **% of sales**: each hour's share of the daily goal. An hour's **Sales
+  Target** is Goal × its %, and the CLOSE target is the Goal.
+
+They start as 10am–7pm every day, with 10 / 10 / 15 / 15 / 20 / 20 / 10 /
+10 / 10%. Edit either table and the next build uses it. The table's
+**Total** shows what the hours add up to. As set now that's 120%, so the
+hourly targets add up to more than the Goal.
+
 ## Hourly Tracker
 
-Each build adds an **Hourly Tracker** under the staff rows. It has one column
-per hour from 10am to 8pm, each sitting under that hour on the grid, plus a
-**CLOSE** column under 9pm.
+Each build adds an **Hourly Tracker** under the staff rows. It has a column
+for each open hour, each sitting under that hour on the grid, plus a
+**CLOSE** column.
 
-| Row | Hourly cell | CLOSE |
+| Row | Each hour | CLOSE |
 |---|---|---|
-| Floor Lead | typed in | — |
-| % of sales | typed in | sum |
-| Sales Target | typed in | sum |
-| Total | typed in | sum |
-| Sales % | Total ÷ Sales Target | average |
-| AOV, UPT | typed in | average |
-| Transactions, Traffic | typed in | sum |
-| Conversion | Transactions ÷ Traffic | average |
+| Floor Lead | filled from the grid: who's on FL that hour | — |
+| % of sales | from the % of sales table | sum |
+| Sales Target | Goal × % of sales | the Goal |
+| Total | from the pasted MAO export | sum |
+| Sales % | Total ÷ Sales Target | Total ÷ Goal |
+| AOV | Total ÷ Transactions | day's Total ÷ Transactions |
+| UPT | units ÷ transactions, from the export | day's units ÷ transactions |
+| Transactions | from the export | sum |
+| Traffic | typed in | sum |
+| Conversion | Transactions ÷ Traffic | day's Transactions ÷ Traffic |
 
-A formula cell stays blank until its inputs are filled in, so there are no
-`#DIV/0!` errors and CLOSE averages count only the hours with data.
+Formula cells stay blank until their numbers are in, so there are no
+`#DIV/0!` errors.
 
-- **New day:** the tracker starts blank, except **% of sales**, which carries
-  over from the previous day. Change which rows carry over in
-  `DEPLOY.TRACKER.CARRY_OVER`.
-- **Rebuilding the same day:** every number already typed in is kept.
+- **Rebuilding the same day** keeps the Goal, the Week goal, Traffic and the
+  notes. Sales are filled back in from what's been pasted.
 - **Yesterday's numbers** stay on its archived (hidden) `Deployment YYYY-MM-DD` tab.
-- **The hours** are set by `DEPLOY.TRACKER.FIRST_HOUR` and `LAST_HOUR`.
+
+## Pasting sales from MAO
+
+To the right of the legend there's an **Items sold (MAO export)** box.
+
+1. In MAO, export the **Items Sold** report and copy the rows. Including the
+   header row is fine, and so is leaving it out.
+2. Click the **yellow cell** and paste (Ctrl/Cmd + V).
+3. The rows disappear. The tracker's Total, Transactions and UPT update for
+   every hour, and the line above the box shows the day so far.
+
+How the export is read:
+
+- **One sale:** items with the same *Creation Time*, to the second, are one
+  transaction. Units come from *Quantity Sold*, and each line is worth
+  *In Store Price* × quantity.
+- **Returns:** a negative quantity takes its value off that hour. A return
+  on its own doesn't count as a sale.
+- **Outside opening hours:** a sale before opening counts in the first hour,
+  and one after closing in the last.
+- **Other days:** rows from another day are ignored, and the box says so.
+
+**Paste as often as you like.** Pasted sales are kept on a hidden **Sales
+Log** tab, for the same 7 days as the archives. A new paste replaces every
+sale in the time span it covers, so either way works:
+
+- paste each hour's new sales as you go;
+- paste the whole day so far at any point;
+- paste everything once at close.
+
+Pasting the same sales twice never counts them twice. An hour stays blank
+until the store has had a sale in it or a later hour.
 
 ## Hourly Notes
 
-Under the tracker, **Hourly Notes** has one large text box per hour, from 8am
-to 9pm, each under its hour on the grid. Click a box and type. Text wraps
+Under the tracker, **Hourly Notes** has one large text box for each open
+hour, each under its hour on the grid. Click a box and type. Text wraps
 inside it, and you can drag the row taller if a day needs more room.
 
 - **Rebuilding the same day** keeps every note.
-- **A new day** starts with empty boxes. Yesterday's notes stay on its
-  archived (hidden) `Deployment YYYY-MM-DD` tab.
+- **A new day** starts with empty boxes.
 - **Box height** is set by `DEPLOY.NOTES.BOX_HEIGHT`.
 
 ## What the app shows

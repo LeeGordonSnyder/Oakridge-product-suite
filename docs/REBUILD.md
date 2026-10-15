@@ -56,6 +56,11 @@ Outside tolerance / Not saved).
       formulas and a CLOSE column. It survives a same-day rebuild.
 - [x] **Hourly Notes** under the tracker: one large wrapping text box per
       hour, kept on a same-day rebuild.
+- [x] **Goals and sales**: Goal / Strive / Week / Month across the top (the
+      monthly goal is set once a month from the menu), hourly targets from a
+      % of sales table, and an **Items sold** box where the MAO export is
+      pasted to fill Total, Transactions and UPT. Re-pasting never
+      double-counts.
 - [x] App: a **Your shift today** card on Home (roles, times, breaks, a "now"
       marker), read from the Deployment tab. It stays hidden until the add-on
       is installed.

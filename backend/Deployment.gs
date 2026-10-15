@@ -30,7 +30,6 @@ const DEPLOY = {
   CODES_SHEET: "Deployment Codes",
   ARCHIVE_PREFIX: "Deployment ",
   ARCHIVE_KEEP_DAYS: 7, // archived days are hidden, then deleted once older than this
-  OPERATING_HOURS: "10am – 9pm",
   // Grid: 15-minute slots from 8:00am to 10:00pm
   GRID_START_MIN: 8 * 60,
   GRID_END_MIN: 22 * 60,
@@ -56,14 +55,18 @@ const DEPLOY = {
     MIN_FLOOR_LEADS: 1, // never zero Floor Leads while one is scheduled
   },
   BREAK_CODE: "B",
-  // Hourly Tracker, written under the staff rows. One column per selling
-  // hour, lined up under that hour on the grid, plus CLOSE under the next hour.
-  TRACKER: {
-    TITLE: "Hourly Tracker",
-    FIRST_HOUR: 10, // 10am
-    LAST_HOUR: 20, // 8pm
-    CARRY_OVER: ["% of sales"], // rows copied from the previous day's tracker
-  },
+  // Hourly Tracker, written under the staff rows: one column per hour the
+  // store is open (from the Store hours table), plus CLOSE.
+  TRACKER: { TITLE: "Hourly Tracker" },
+  // Store hours and % of sales live on the Deployment Codes tab, from this
+  // column (G), so leads can change them without touching the script.
+  PLAN_COL: 7,
+  STRIVE_MULTIPLIER: 1.4, // Strive = Goal × 1.4
+  MONTH_GOAL_PREFIX: "MONTH_GOAL_", // script property per month, e.g. MONTH_GOAL_2026-10
+  // Pasted MAO "Items Sold" lines are kept on this hidden tab, so pasting the
+  // same sales again replaces them instead of counting them twice.
+  SALES_LOG_SHEET: "Sales Log",
+  PASTE_WIDTH: 11, // columns in the MAO export
   // Hourly Notes, under the tracker: one tall text box per grid hour.
   NOTES: {
     TITLE: "Hourly Notes",
@@ -71,20 +74,37 @@ const DEPLOY = {
   },
 };
 
-// label, kind, number format, CLOSE column. "input" rows are typed in (white),
-// "plan" rows are typed in (grey), "calc" rows are formulas.
+// label, kind, number format, CLOSE column[, numerator, denominator].
+//   auto   — filled from the grid (who's on FL that hour)
+//   plan   — % of sales, from the Deployment Codes tab
+//   target — Goal × % of sales
+//   sales  — filled from the pasted MAO export
+//   calc   — numerator ÷ denominator
+//   input  — typed in
+// CLOSE: sum of the hours, the Goal, a ratio of the CLOSE values, or the
+// day's units ÷ transactions (upt).
 const DEPLOY_TRACKER_ROWS = [
-  ["Floor Lead", "input", "@", ""],
+  ["Floor Lead", "auto", "@", ""],
   ["Segment", "header", "@", ""],
   ["% of sales", "plan", "0%", "sum"],
-  ["Sales Target", "plan", "$#,##0", "sum"],
-  ["Total", "input", "$#,##0", "sum"],
-  ["Sales %", "calc", "0%", "avg", "Total", "Sales Target"],
-  ["AOV", "input", "$#,##0.00", "avg"],
-  ["UPT", "input", "0.00", "avg"],
-  ["Transactions", "input", "0", "sum"],
+  ["Sales Target", "target", "$#,##0", "goal"],
+  ["Total", "sales", "$#,##0", "sum"],
+  ["Sales %", "calc", "0%", "ratio", "Total", "Sales Target"],
+  ["AOV", "calc", "$#,##0", "ratio", "Total", "Transactions"],
+  ["UPT", "sales", "0.00", "upt"],
+  ["Transactions", "sales", "0", "sum"],
   ["Traffic", "input", "0", "sum"],
-  ["Conversion", "calc", "0%", "avg", "Transactions", "Traffic"],
+  ["Conversion", "calc", "0%", "ratio", "Transactions", "Traffic"],
+];
+
+// Seeded once on the Deployment Codes tab, then edited there.
+const DEFAULT_STORE_HOURS = [
+  ["Monday", "10am", "7pm"], ["Tuesday", "10am", "7pm"], ["Wednesday", "10am", "7pm"], ["Thursday", "10am", "7pm"],
+  ["Friday", "10am", "7pm"], ["Saturday", "10am", "7pm"], ["Sunday", "10am", "7pm"],
+];
+const DEFAULT_SALES_CURVE = [
+  ["8am", ""], ["9am", ""], ["10am", 0.1], ["11am", 0.1], ["12pm", 0.15], ["1pm", 0.15], ["2pm", 0.2],
+  ["3pm", 0.2], ["4pm", 0.1], ["5pm", 0.1], ["6pm", 0.1], ["7pm", ""], ["8pm", ""], ["9pm", ""],
 ];
 
 // Code, meaning, fill, text color, When I Work position names that map to it.
@@ -442,6 +462,8 @@ function onOpen() {
     .addItem("Build today's deployment", "deployMenuBuildToday")
     .addItem("Build for another date…", "deployMenuBuildDate")
     .addSeparator()
+    .addItem("Set monthly goal…", "deployMenuSetMonthGoal")
+    .addSeparator()
     .addItem("Set the When I Work link…", "deployMenuSetGlobalFeed")
     .addItem("Set up deployment tabs", "deploySetup")
     .addItem("Turn on daily auto-build", "deployInstallTrigger")
@@ -461,6 +483,7 @@ function deploySetup() {
     codes.setFrozenRows(1);
     codes.setColumnWidth(2, 200); codes.setColumnWidth(5, 380);
   }
+  deployReadPlan_(); // seeds Store hours and % of sales next to the codes
   deployEnsureEditSync_();
   SpreadsheetApp.getActive().toast("Deployment tabs are ready. Next: Deployment → Set the When I Work link…, then Build today's deployment.");
 }
@@ -543,12 +566,16 @@ function deployTidyArchives_(ss, todayKey) {
 function deployWriteSheet_(dayKey, roster, codes) {
   const ss = SpreadsheetApp.getActive();
   const cur = ss.getSheetByName(DEPLOY.SHEET);
-  const sameDay = !!cur && cur.getRange("B1").getNote() === dayKey;
-  // Tracker numbers survive a same-day rebuild; a new day starts blank apart
-  // from the CARRY_OVER rows.
-  let keep = cur ? deployReadTracker_(cur) : {};
-  if (!sameDay) keep = Object.fromEntries(DEPLOY.TRACKER.CARRY_OVER.filter((l) => keep[l]).map((l) => [l, keep[l]]));
-  const keepNotes = sameDay ? deployReadNotes_(cur) : []; // notes are for the day they were written
+  const curKey = cur ? cur.getRange("B1").getNote() : "";
+  const sameDay = !!cur && curKey === dayKey;
+  const day = deployDayPlan_(deployReadPlan_(), dayKey);
+  // A same-day rebuild keeps what was typed (goal, week, traffic, notes);
+  // a new day keeps only the week's goal, within the same week. Sales come
+  // back from the Sales Log either way.
+  const keep = sameDay ? deployReadTracker_(cur) : {};
+  const keepNotes = sameDay ? deployReadNotes_(cur) : {};
+  const goals = cur ? deployReadGoals_(cur) : {};
+  const keepGoals = sameDay ? goals : deploySameWeek_(curKey, dayKey) ? { week: goals.week } : {};
   // Built under a temporary name and swapped in at the end, so the app never
   // finds the Deployment tab missing while a build is running.
   const tmpName = DEPLOY.SHEET + " (building)";
@@ -565,7 +592,7 @@ function deployWriteSheet_(dayKey, roster, codes) {
   sh.getRange("A1").setValue("DATE").setBackground(maroon).setFontColor("#fff").setFontWeight("bold").setHorizontalAlignment("center");
   sh.getRange("B1").setValue(deployDayLabel_(dayKey)).setFontWeight("bold").setNote(dayKey);
   sh.getRange("A2").setValue("Operating hours").setBackground(maroon).setFontColor("#fff").setFontSize(8).setHorizontalAlignment("center");
-  sh.getRange("B2").setValue(DEPLOY.OPERATING_HOURS);
+  sh.getRange("B2").setValue(day.label);
   sh.getRange(1, C.BREAK30, 2, 3).merge().setValue("Built from When I Work " + Utilities.formatDate(new Date(), DEPLOY.TZ, "h:mm a") + "\nEdit any cell — colors follow the code")
     .setFontSize(8).setFontColor("#7c6469").setWrap(true).setVerticalAlignment("middle");
 
@@ -594,6 +621,12 @@ function deployWriteSheet_(dayKey, roster, codes) {
   sh.getRange(DEPLOY.FIRST_STAFF_ROW, 1, rows, 2).setFontWeight("bold").setFontSize(10);
   sh.getRange(DEPLOY.FIRST_STAFF_ROW, C.BREAK30, rows, 3).setFontColor("#C0392B").setFontWeight("bold").setHorizontalAlignment("center");
   sh.getRange(DEPLOY.FIRST_STAFF_ROW, C.GRID, rows, n).setFontSize(7).setFontWeight("bold").setHorizontalAlignment("center");
+  // grey out the break cells a shift doesn't get, like the paper template
+  roster.forEach((p, i) => {
+    const n15 = p.breaks.filter((b) => b.duration === 15).length;
+    const has = [p.breaks.some((b) => b.duration === 30), n15 >= 1, n15 >= 2];
+    has.forEach((yes, k) => { if (!yes) sh.getRange(DEPLOY.FIRST_STAFF_ROW + i, C.BREAK30 + k).setBackground("#9e9e9e"); });
+  });
   // flag breaks the scheduler couldn't place within the coverage rules
   roster.forEach((p, i) => p.breaks.forEach((b) => {
     if (!b.flagged) return;
@@ -619,9 +652,14 @@ function deployWriteSheet_(dayKey, roster, codes) {
     sh.getRange(DEPLOY.HEADER_ROW + 1 + i, lc + 1).setValue(c.label);
   });
 
+  deployWriteGoals_(sh, dayKey, keepGoals);
   const trackerTop = DEPLOY.FIRST_STAFF_ROW + rows + 1;
-  deployWriteTracker_(sh, trackerTop, keep);
-  deployWriteNotes_(sh, trackerTop + DEPLOY_TRACKER_ROWS.length + 2, keepNotes);
+  deployWriteTracker_(sh, trackerTop, day, keep);
+  deployWriteNotes_(sh, trackerTop + DEPLOY_TRACKER_ROWS.length + 2, day.hours, keepNotes);
+  deployFillFloorLeads_(sh);
+  const sales = deployApplySales_(sh, dayKey);
+  deployWritePasteBox_(sh);
+  if (sales && sales.items) deployPasteStatus_(sh, `Today so far: $${Math.round(sales.total).toLocaleString()} from ${sales.trans} sales (${sales.items} items pasted).`);
 
   // Sizing
   sh.setColumnWidth(1, 110); sh.setColumnWidth(2, 100);
@@ -648,6 +686,10 @@ function deployOnEdit(e) {
   const range = e && e.range;
   if (!range || range.getSheet().getName() !== DEPLOY.SHEET) return;
   const sh = range.getSheet(), C = DEPLOY.COL, n = deploySlotCount_();
+  if (range.getColumn() >= deployPasteCol_() && range.getLastRow() >= DEPLOY.FIRST_STAFF_ROW) {
+    deployHandlePaste_(sh, range);
+    return;
+  }
   const tracker = deployTrackerRow_(sh);
   const r0 = Math.max(range.getRow(), DEPLOY.FIRST_STAFF_ROW);
   const r1 = Math.min(range.getLastRow(), tracker ? tracker - 1 : sh.getLastRow());
@@ -670,6 +712,7 @@ function deployOnEdit(e) {
       sh.getRange(r0 + i, C.BREAK30, 1, 3).setValues([breaks]).setBackground(null).clearNote();
     }
   });
+  if (touchesGrid) deployFillFloorLeads_(sh);
 }
 
 function deployEnsureEditSync_() {
@@ -691,44 +734,200 @@ function deployHourCol_(hour) {
   return DEPLOY.COL.GRID + (hour * 60 - DEPLOY.GRID_START_MIN) / DEPLOY.SLOT_MIN;
 }
 
-function deployTrackerHours_() {
-  const hours = [];
-  for (let h = DEPLOY.TRACKER.FIRST_HOUR; h <= DEPLOY.TRACKER.LAST_HOUR; h++) hours.push(h);
-  return hours;
+// "10am" label for an hour, as on the grid headers.
+function deployHourLabel_(hour) {
+  return deployFmtTime_(hour * 60).replace("a", "am").replace("p", "pm");
 }
 
+/* ---------- Store hours and % of sales (on the Deployment Codes tab) ---------- */
+
+function deploySeedPlan_(sh) {
+  const c = DEPLOY.PLAN_COL, maroon = "#894554", n = DEFAULT_SALES_CURVE.length;
+  sh.getRange(1, c, 1, 3).merge().setValue("Store hours").setBackground(maroon).setFontColor("#ffffff").setFontWeight("bold");
+  sh.getRange(2, c, 1, 3).setValues([["Day", "Opens", "Closes"]]).setFontWeight("bold");
+  sh.getRange(3, c, 7, 3).setNumberFormat("@").setValues(DEFAULT_STORE_HOURS);
+  sh.getRange(1, c, 1, 1).setNote("The Hourly Tracker has a column for each hour the store is open that day, then CLOSE. Write times like 10am or 7pm.");
+  sh.getRange(1, c + 4, 1, 2).merge().setValue("% of sales").setBackground(maroon).setFontColor("#ffffff").setFontWeight("bold");
+  sh.getRange(2, c + 4, 1, 2).setValues([["Hour", "% of goal"]]).setFontWeight("bold");
+  sh.getRange(3, c + 4, n, 1).setNumberFormat("@");
+  sh.getRange(3, c + 5, n + 1, 1).setNumberFormat("0%");
+  sh.getRange(3, c + 4, n, 2).setValues(DEFAULT_SALES_CURVE);
+  const L = deployColLetter_(c + 5);
+  sh.getRange(3 + n, c + 4, 1, 2).setValues([["Total", `=SUM(${L}3:${L}${2 + n})`]]).setFontWeight("bold");
+  sh.getRange(1, c + 4).setNote("Each hour's share of the daily Goal: an hour's Sales Target is Goal × this. Leave an hour blank for no target. The Total shows what the hours add up to.");
+  sh.setColumnWidth(c, 90); sh.setColumnWidths(c + 1, 2, 60); sh.setColumnWidth(c + 4, 60); sh.setColumnWidth(c + 5, 70);
+}
+
+// Reads (seeding on first use) the Store hours and % of sales tables.
+function deployReadPlan_() {
+  const sh = SpreadsheetApp.getActive().getSheetByName(DEPLOY.CODES_SHEET);
+  if (!sh) return deployParsePlan_(DEFAULT_STORE_HOURS, DEFAULT_SALES_CURVE);
+  const c = DEPLOY.PLAN_COL;
+  if (!String(sh.getRange(1, c).getValue()).trim()) deploySeedPlan_(sh);
+  return deployParsePlan_(sh.getRange(3, c, 7, 3).getDisplayValues(), sh.getRange(3, c + 4, DEFAULT_SALES_CURVE.length, 2).getValues());
+}
+
+// hoursRows: [day, opens, closes]; curveRows: [hour, share]. A share can be
+// 0.1, 10 or "10%". → { storeHours: { weekday 0–6: { open, close } }, pct: { hour: share } }
+function deployParsePlan_(hoursRows, curveRows) {
+  const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  const storeHours = {};
+  for (const [day, open, close] of hoursRows) {
+    const d = days.indexOf(String(day).trim().toLowerCase());
+    const o = deployParseBreakTime_(open), cl = deployParseBreakTime_(close);
+    if (d >= 0 && o !== null && cl !== null && cl > o) storeHours[d] = { open: o, close: cl };
+  }
+  const pct = {};
+  for (const [hour, value] of curveRows) {
+    const m = deployParseBreakTime_(hour);
+    if (m === null || value === "" || value === null) continue;
+    const text = String(value);
+    let v = typeof value === "number" ? value : parseFloat(text.replace(/[%\s]/g, ""));
+    if (!isFinite(v)) continue;
+    if (text.indexOf("%") >= 0 || v > 1) v = v / 100;
+    pct[Math.floor(m / 60)] = v;
+  }
+  return { storeHours, pct };
+}
+
+// The tracker's hours for one day: every hour the store is open, with CLOSE
+// in the column after. Clipped to the grid.
+function deployDayPlan_(plan, dayKey) {
+  const [y, m, d] = dayKey.split("-").map(Number);
+  const open = plan.storeHours[new Date(Date.UTC(y, m - 1, d)).getUTCDay()] || { open: 10 * 60, close: 19 * 60 };
+  const first = Math.max(Math.floor(open.open / 60), DEPLOY.GRID_START_MIN / 60);
+  const closeHour = Math.max(first + 1, Math.min(Math.ceil(open.close / 60), DEPLOY.GRID_END_MIN / 60 - 1));
+  const hours = [];
+  for (let h = first; h < closeHour; h++) hours.push(h);
+  const fmt = (min) => deployFmtTime_(min).replace("a", "am").replace("p", "pm");
+  return { hours, closeHour, pct: plan.pct, label: `${fmt(open.open)} – ${fmt(open.close)}` };
+}
+
+/* ---------- Goal · Strive · Week · Month (rows 1–2) ---------- */
+
+// Four label/value pairs, 7 grid columns each, across the top of the grid.
+function deployGoalCells_() {
+  const F = DEPLOY.COL.GRID, w = 7;
+  return { width: w, goalLabel: F, goal: F + w, striveLabel: F + 2 * w, strive: F + 3 * w, weekLabel: F + 4 * w, week: F + 5 * w, monthLabel: F + 6 * w, month: F + 7 * w };
+}
+
+function deployGoalRef_() {
+  return "$" + deployColLetter_(deployGoalCells_().goal) + "$1";
+}
+
+function deployMonthGoal_(dayKey) {
+  const v = PropertiesService.getScriptProperties().getProperty(DEPLOY.MONTH_GOAL_PREFIX + dayKey.slice(0, 7));
+  return v === null || v === "" ? null : Number(v);
+}
+
+function deployWriteMonthCell_(sh, value, dayKey) {
+  const cell = sh.getRange(1, deployGoalCells_().month).clearNote();
+  if (value === null) {
+    const [y, m] = dayKey.split("-").map(Number);
+    const month = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][m - 1];
+    cell.setNumberFormat("@").setValue("UPDATE").setFontColor("#d32f2f")
+      .setNote(`No monthly goal set for ${month} ${y}. Use Deployment → Set monthly goal…`);
+  } else {
+    cell.setNumberFormat("$#,##0").setValue(value).setFontColor("#000000");
+  }
+}
+
+function deployWriteGoals_(sh, dayKey, keep) {
+  const g = deployGoalCells_(), w = g.width, goalA1 = deployColLetter_(g.goal) + "1";
+  const box = (col) => sh.getRange(1, col, 2, w).merge().setFontFamily("Arial").setFontWeight("bold")
+    .setHorizontalAlignment("center").setVerticalAlignment("middle");
+  [[g.goalLabel, "Goal"], [g.striveLabel, "Strive"], [g.weekLabel, "Week"], [g.monthLabel, "Month"]].forEach(([col, text]) => {
+    const strive = col === g.striveLabel;
+    box(col).setValue(text).setFontSize(12).setBackground(strive ? "#f8d7e3" : "#b5577a").setFontColor(strive ? "#b5577a" : "#ffffff");
+  });
+  box(g.goal).setNumberFormat("$#,##0").setValue(keep.goal === undefined ? "" : keep.goal).setFontSize(14).setBackground("#ffff00")
+    .setNote("Type today's sales goal. Each hour's Sales Target is this × its % of sales.");
+  box(g.strive).setNumberFormat("$#,##0").setFormula(`=IF(${goalA1}="","",${goalA1}*${DEPLOY.STRIVE_MULTIPLIER})`).setFontSize(14);
+  box(g.week).setNumberFormat("$#,##0").setValue(keep.week === undefined ? "" : keep.week).setFontSize(14)
+    .setNote("Type this week's goal. It carries over to each day's deployment until Sunday.");
+  box(g.month).setFontSize(14);
+  deployWriteMonthCell_(sh, deployMonthGoal_(dayKey), dayKey);
+}
+
+// { goal, week } typed on a tab ({} for a tab built before the goal block).
+function deployReadGoals_(sh) {
+  const g = deployGoalCells_();
+  if (String(sh.getRange(1, g.goalLabel).getValue()) !== "Goal") return {};
+  return { goal: sh.getRange(1, g.goal).getValue(), week: sh.getRange(1, g.week).getValue() };
+}
+
+// Same Monday-to-Sunday week?
+function deploySameWeek_(a, b) {
+  if (!a || !b) return false;
+  const monday = (key) => {
+    const [y, m, d] = key.split("-").map(Number);
+    const t = new Date(Date.UTC(y, m - 1, d));
+    t.setUTCDate(t.getUTCDate() - ((t.getUTCDay() + 6) % 7));
+    return t.toISOString().slice(0, 10);
+  };
+  return monday(a) === monday(b);
+}
+
+function deployMenuSetMonthGoal() {
+  const ui = SpreadsheetApp.getUi();
+  const today = deployTodayKey_(), month = today.slice(0, 7);
+  const [y, m] = month.split("-").map(Number);
+  const name = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][m - 1] + " " + y;
+  const current = deployMonthGoal_(today);
+  const r = ui.prompt("Monthly goal", `Sales goal for ${name}${current !== null ? ` (now $${Math.round(current).toLocaleString()})` : ""}:`, ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK) return;
+  const value = Number(r.getResponseText().replace(/[$,\s]/g, ""));
+  if (!isFinite(value) || value <= 0) { ui.alert("Please enter an amount, like 685137."); return; }
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty(DEPLOY.MONTH_GOAL_PREFIX + month, String(value));
+  // forget goals from more than a year ago
+  props.getKeys().filter((k) => k.indexOf(DEPLOY.MONTH_GOAL_PREFIX) === 0 && k < DEPLOY.MONTH_GOAL_PREFIX + `${y - 1}-${String(m).padStart(2, "0")}`)
+    .forEach((k) => props.deleteProperty(k));
+  const sh = SpreadsheetApp.getActive().getSheetByName(DEPLOY.SHEET);
+  if (sh && sh.getRange("B1").getNote().slice(0, 7) === month) deployWriteMonthCell_(sh, value, today);
+  ui.alert(`Saved. Every deployment in ${name} shows a monthly goal of $${Math.round(value).toLocaleString()}.`);
+}
+
+/* ---------- Hourly Tracker ---------- */
+
 // The tracker's cell contents, as a values/formulas block: one row per
-// DEPLOY_TRACKER_ROWS entry, columns 1 … lastCol. keep[label] = hourly values.
-function deployTrackerValues_(top, lastCol, keep) {
-  const L = deployColLetter_, span = 60 / DEPLOY.SLOT_MIN;
-  const hours = deployTrackerHours_();
-  const first = deployHourCol_(hours[0]);
-  const lastHourEnd = deployHourCol_(hours[hours.length - 1]) + span - 1;
-  const close = deployHourCol_(DEPLOY.TRACKER.LAST_HOUR + 1);
+// DEPLOY_TRACKER_ROWS entry, columns 1 … lastCol. keep[label][hour] = value.
+function deployTrackerValues_(top, lastCol, day, keep) {
+  const L = deployColLetter_, span = 60 / DEPLOY.SLOT_MIN, goal = deployGoalRef_();
+  const first = deployHourCol_(day.hours[0]);
+  const lastHourEnd = deployHourCol_(day.hours[day.hours.length - 1]) + span - 1;
+  const close = deployHourCol_(day.closeHour);
   const rowOf = {};
   DEPLOY_TRACKER_ROWS.forEach((r, i) => (rowOf[r[0]] = top + 1 + i));
   return DEPLOY_TRACKER_ROWS.map(([label, kind, , closeAgg, num, den]) => {
     const row = new Array(lastCol).fill("");
     const r = rowOf[label];
     row[0] = label;
-    hours.forEach((h, i) => {
-      const c = deployHourCol_(h);
-      if (kind === "header") row[c - 1] = deployFmtTime_(h * 60).replace("a", "am").replace("p", "pm");
-      else if (kind === "calc") row[c - 1] = `=IFERROR(${L(c)}${rowOf[num]}/${L(c)}${rowOf[den]},"")`;
-      else if (keep[label] && keep[label][i] !== undefined) row[c - 1] = keep[label][i];
-    });
-    const range = `${L(first)}${r}:${L(lastHourEnd)}${r}`;
+    for (const h of day.hours) {
+      const c = deployHourCol_(h), at = (l) => `${L(c)}${rowOf[l]}`;
+      if (kind === "header") row[c - 1] = deployHourLabel_(h);
+      else if (kind === "plan") row[c - 1] = day.pct[h] === undefined ? "" : day.pct[h];
+      else if (kind === "target") row[c - 1] = `=IF(OR(${goal}="",${at("% of sales")}=""),"",${goal}*${at("% of sales")})`;
+      else if (kind === "calc") row[c - 1] = `=IF(${at(num)}="","",IFERROR(${at(num)}/${at(den)},""))`;
+      else if (keep[label] && keep[label][h] !== undefined) row[c - 1] = keep[label][h];
+    }
+    const range = `${L(first)}${r}:${L(lastHourEnd)}${r}`, cl = (l) => `${L(close)}${rowOf[l]}`;
     if (kind === "header") row[close - 1] = "CLOSE";
     else if (closeAgg === "sum") row[close - 1] = `=IF(COUNT(${range}),SUM(${range}),"")`;
-    else if (closeAgg === "avg") row[close - 1] = `=IFERROR(AVERAGE(${range}),"")`;
+    else if (closeAgg === "goal") row[close - 1] = `=IF(${goal}="","",${goal})`;
+    else if (closeAgg === "ratio") row[close - 1] = `=IF(${cl(num)}="","",IFERROR(${cl(num)}/${cl(den)},""))`;
+    else if (closeAgg === "upt") {
+      const t = rowOf.Transactions;
+      row[close - 1] = `=IFERROR(SUMPRODUCT(${range},${L(first)}${t}:${L(lastHourEnd)}${t})/${cl("Transactions")},"")`;
+    }
     return row;
   });
 }
 
-function deployWriteTracker_(sh, top, keep) {
+function deployWriteTracker_(sh, top, day, keep) {
   const span = 60 / DEPLOY.SLOT_MIN, lastCol = DEPLOY.COL.GRID + deploySlotCount_() - 1;
   const R = DEPLOY_TRACKER_ROWS, n = R.length;
-  const first = deployHourCol_(DEPLOY.TRACKER.FIRST_HOUR), close = deployHourCol_(DEPLOY.TRACKER.LAST_HOUR + 1);
+  const first = deployHourCol_(day.hours[0]), close = deployHourCol_(day.closeHour);
   const pink = "#b5577a", grey = "#d9d9d9", closeGrey = "#bfbfbf", filler = "#f4eff1";
 
   // Title bar. Columns A–B are frozen and a merge can't cross into them.
@@ -738,53 +937,274 @@ function deployWriteTracker_(sh, top, keep) {
 
   // Formats go on before the values, so "10am" stays text.
   R.forEach(([, , fmt], i) => sh.getRange(top + 1 + i, 1, 1, lastCol).setNumberFormat(fmt));
-  const block = sh.getRange(top + 1, 1, n, lastCol);
-  block.setValues(deployTrackerValues_(top, lastCol, keep))
+  sh.getRange(top + 1, 1, n, lastCol).setValues(deployTrackerValues_(top, lastCol, day, keep))
     .setFontFamily("Arial").setFontSize(10).setHorizontalAlignment("center").setVerticalAlignment("middle")
     .setBorder(true, true, true, true, true, true, "#5b4a4e", SpreadsheetApp.BorderStyle.SOLID);
-  for (const h of deployTrackerHours_()) sh.getRange(top + 1, deployHourCol_(h), n, span).mergeAcross();
+  for (const h of day.hours) sh.getRange(top + 1, deployHourCol_(h), n, span).mergeAcross();
   sh.getRange(top + 1, close, n, span).mergeAcross();
 
   R.forEach(([, kind], i) => {
-    if (kind !== "input") sh.getRange(top + 1 + i, 1, 1, lastCol).setBackground(grey);
+    if (kind !== "input" && kind !== "sales" && kind !== "auto") sh.getRange(top + 1 + i, 1, 1, lastCol).setBackground(grey);
   });
   sh.getRange(top + 1, 1, n, 1).setFontWeight("bold");
   sh.getRange(top + 2, 1, 1, lastCol).setFontWeight("bold"); // Segment
   sh.getRange(top + 1, 2, n, first - 2).setBackground(filler).setBorder(null, null, null, null, false, false); // before opening
-  sh.getRange(top + 1, close, n, lastCol - close + 1).setBackground(closeGrey);
+  sh.getRange(top + 1, close, n, span).setBackground(closeGrey).setFontWeight("bold");
+  if (close + span <= lastCol) sh.getRange(top + 1, close + span, n, lastCol - close - span + 1).setBackground(filler).setBorder(null, null, null, null, false, false);
   sh.setRowHeight(top, 26);
   sh.setRowHeights(top + 1, n, 22);
 }
 
-// { label: [value per hour] } for the typed-in rows of a tab's tracker.
-function deployReadTracker_(sh) {
+// Where everything in a tab's tracker is: row per label, and each hour's
+// column read back from the Segment row. null if the tab has no tracker.
+function deployTrackerLayout_(sh) {
   const top = deployTrackerRow_(sh);
-  if (!top) return {};
+  if (!top) return null;
   const lastCol = DEPLOY.COL.GRID + deploySlotCount_() - 1;
-  const vals = sh.getRange(top + 1, 1, DEPLOY_TRACKER_ROWS.length, lastCol).getValues();
+  const values = sh.getRange(top + 1, 1, DEPLOY_TRACKER_ROWS.length, lastCol).getValues();
+  const rowOf = {};
+  values.forEach((r, i) => { const l = String(r[0]).trim(); if (l) rowOf[l] = top + 1 + i; });
+  const hours = [];
+  let closeCol = 0;
+  if (rowOf.Segment) {
+    values[rowOf.Segment - top - 1].forEach((v, i) => {
+      const t = String(v).trim();
+      if (i === 0 || !t) return;
+      if (t === "CLOSE") closeCol = i + 1;
+      else { const m = deployParseBreakTime_(t); if (m !== null) hours.push({ hour: Math.floor(m / 60), col: i + 1 }); }
+    });
+  }
+  return { top, rowOf, hours, closeCol, values, lastCol };
+}
+
+// { label: { hour: value } } for the typed-in rows of a tab's tracker.
+function deployReadTracker_(sh) {
+  const lay = deployTrackerLayout_(sh);
+  if (!lay) return {};
   const kinds = Object.fromEntries(DEPLOY_TRACKER_ROWS.map((r) => [r[0], r[1]]));
   const out = {};
-  for (const row of vals) {
-    const label = String(row[0]).trim();
-    if (kinds[label] !== "input" && kinds[label] !== "plan") continue;
-    out[label] = deployTrackerHours_().map((h) => row[deployHourCol_(h) - 1]);
+  for (const [label, row] of Object.entries(lay.rowOf)) {
+    if (kinds[label] !== "input") continue;
+    out[label] = {};
+    for (const { hour, col } of lay.hours) out[label][hour] = lay.values[row - lay.top - 1][col - 1];
   }
   return out;
 }
 
-/* ---------- Hourly Notes ---------- */
-
-function deployNoteHours_() {
-  const hours = [];
-  for (let m = DEPLOY.GRID_START_MIN; m < DEPLOY.GRID_END_MIN; m += 60) hours.push(m / 60);
-  return hours;
+// Floor Lead row ← initials of whoever is on FL in each hour on the grid
+// ("MS/SC" when two people share the hour, most time first).
+function deployFillFloorLeads_(sh) {
+  const lay = deployTrackerLayout_(sh);
+  if (!lay || !lay.rowOf["Floor Lead"]) return;
+  const C = DEPLOY.COL, n = deploySlotCount_(), per = 60 / DEPLOY.SLOT_MIN;
+  const staffRows = lay.top - 1 - DEPLOY.FIRST_STAFF_ROW;
+  if (staffRows < 1) return;
+  const grid = sh.getRange(DEPLOY.FIRST_STAFF_ROW, 1, staffRows, C.GRID + n - 1).getDisplayValues().filter((r) => String(r[0]).trim());
+  const row = lay.values[lay.rowOf["Floor Lead"] - lay.top - 1].slice();
+  for (const { hour, col } of lay.hours) {
+    const s0 = (hour * 60 - DEPLOY.GRID_START_MIN) / DEPLOY.SLOT_MIN;
+    const leads = grid
+      .map((r) => ({ who: deployInitials_(r[0]), n: r.slice(C.GRID - 1 + s0, C.GRID - 1 + s0 + per).filter((x) => String(x).trim().toUpperCase() === "FL").length }))
+      .filter((x) => x.n > 0)
+      .sort((a, b) => b.n - a.n);
+    row[col - 1] = [...new Set(leads.map((x) => x.who))].join("/");
+  }
+  sh.getRange(lay.rowOf["Floor Lead"], 1, 1, lay.lastCol).setValues([row]);
 }
 
-// Title bar, an hour header row, and one tall wrapping box per hour, each
-// lined up under that hour on the grid. notes = text per hour, in order.
-function deployWriteNotes_(sh, top, notes) {
+/* ---------- MAO "Items Sold" paste box ---------- */
+
+// The box sits to the right of the legend.
+function deployPasteCol_() {
+  return DEPLOY.COL.GRID + deploySlotCount_() - 1 + 5;
+}
+
+function deployWritePasteBox_(sh) {
+  const c = deployPasteCol_(), w = DEPLOY.PASTE_WIDTH, maroon = "#894554";
+  if (sh.getMaxColumns() < c + w + 3) sh.insertColumnsAfter(sh.getMaxColumns(), c + w + 3 - sh.getMaxColumns());
+  sh.getRange(1, c, 1, w).merge().setValue("Items sold (MAO export)").setBackground(maroon).setFontColor("#ffffff")
+    .setFontWeight("bold").setFontSize(12).setHorizontalAlignment("center");
+  sh.getRange(2, c, 1, w).merge().setValue("Paste the export into the yellow cell ↓  It's added to the Hourly Tracker, then cleared.")
+    .setFontSize(9).setFontColor("#5b4a4e").setHorizontalAlignment("center");
+  sh.getRange(DEPLOY.HEADER_ROW, c, 1, w).merge().setValue("Nothing pasted yet today").setBackground("#f4eff1")
+    .setFontSize(9).setFontColor("#5b4a4e").setHorizontalAlignment("center");
+  sh.getRange(DEPLOY.FIRST_STAFF_ROW, c, 1, w).setBackground("#fff59d")
+    .setNote("Copy the Items Sold report from MAO (with or without its header row) and paste it here with Ctrl/Cmd+V. " +
+      "Paste as often as you like through the day, or once at close: sales already pasted are replaced, never counted twice. " +
+      "Sales from another day are ignored.");
+  sh.setColumnWidths(c, w, 90);
+}
+
+function deployPasteStatus_(sh, text) {
+  sh.getRange(DEPLOY.HEADER_ROW, deployPasteCol_()).setValue(text);
+}
+
+// "1,400" / "$1,400.00" / "(380)" / 380 → number, or null.
+function deployParseMoney_(v) {
+  if (typeof v === "number") return isFinite(v) ? v : null;
+  const t = String(v || "").trim();
+  if (!t) return null;
+  const neg = /^\(.*\)$/.test(t) || /^-/.test(t);
+  const n = parseFloat(t.replace(/[^0-9.]/g, ""));
+  return isFinite(n) ? (neg ? -n : n) : null;
+}
+
+// "Oct 15, 2026 12:44:10 PM" (or the Date Sheets turns it into) → { day: "2026-10-15", secs }.
+function deployParseSaleTime_(v, tz) {
+  if (v instanceof Date && !isNaN(v)) {
+    const s = typeof Utilities !== "undefined" ? Utilities.formatDate(v, tz, "yyyy-MM-dd HH:mm:ss") : v.toISOString().slice(0, 19).replace("T", " ");
+    const [day, time] = s.split(" ");
+    const [h, m, sec] = time.split(":").map(Number);
+    return { day, secs: h * 3600 + m * 60 + sec };
+  }
+  const t = String(v || "").trim().match(/^([A-Za-z]{3})[a-z]*\.?\s+(\d{1,2}),?\s+(\d{4}),?\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AaPp])\.?[Mm]\.?$/);
+  if (!t) return null;
+  const mon = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"].indexOf(t[1].toLowerCase());
+  if (mon < 0) return null;
+  let h = Number(t[4]) % 12;
+  if (t[7].toLowerCase() === "p") h += 12;
+  return { day: `${t[3]}-${String(mon + 1).padStart(2, "0")}-${t[2].padStart(2, "0")}`, secs: h * 3600 + Number(t[5]) * 60 + Number(t[6] || 0) };
+}
+
+// Pasted rows → sale lines { day, secs, sku, qty, amount }. Columns are found
+// from the header row when it's included, otherwise MAO's standard order:
+// Creation Time … SKU, Quantity Sold, On Hand Quantity, In Store Price.
+function deployParseItemsSold_(values, tz) {
+  let col = { time: 0, sku: 7, qty: 8, price: 10 };
+  const lines = [];
+  let skipped = 0;
+  for (const row of values) {
+    const lower = row.map((v) => String(v).trim().toLowerCase());
+    if (lower.indexOf("creation time") >= 0) {
+      const find = (names, fallback) => { const i = lower.findIndex((x) => names.indexOf(x) >= 0); return i >= 0 ? i : fallback; };
+      col = { time: find(["creation time"], 0), sku: find(["sku"], 7), qty: find(["quantity sold", "quantity", "qty"], 8), price: find(["in store price", "price"], 10) };
+      continue;
+    }
+    if (lower.every((x) => !x)) continue;
+    const t = deployParseSaleTime_(row[col.time], tz);
+    const price = deployParseMoney_(row[col.price]);
+    if (!t || price === null) { skipped++; continue; }
+    const qty = deployParseMoney_(row[col.qty]);
+    const units = qty === null ? 1 : qty;
+    lines.push({ day: t.day, secs: t.secs, sku: String(row[col.sku] || "").trim(), qty: units, amount: Math.round(price * units * 100) / 100 });
+  }
+  return { lines, skipped };
+}
+
+// The day's stored lines with a new paste merged in: the paste replaces
+// every stored line of that day inside the time span it covers, so pasting
+// the same sales again (or a fuller export) never double-counts.
+function deployMergeSales_(existing, dayKey, fresh) {
+  if (!fresh.length) return existing.slice();
+  const lo = Math.min(...fresh.map((l) => l.secs)), hi = Math.max(...fresh.map((l) => l.secs));
+  return existing.filter((l) => !(l.day === dayKey && l.secs >= lo && l.secs <= hi)).concat(fresh);
+}
+
+// Per tracker hour: { total, units, trans }. Items rung up at the same second
+// are one sale. Sales before opening count in the first hour, after closing
+// in the last. Hours after the latest sale are left out (blank).
+function deploySalesByHour_(lines, hours) {
+  const out = {};
+  if (!lines.length || !hours.length) return out;
+  const bySale = {};
+  for (const l of lines) (bySale[l.secs] = bySale[l.secs] || []).push(l);
+  const hourOf = (secs) => Math.max(hours[0], Math.min(hours[hours.length - 1], Math.floor(secs / 3600)));
+  const latest = hourOf(Math.max(...lines.map((l) => l.secs)));
+  for (const h of hours) if (h <= latest) out[h] = { total: 0, units: 0, trans: 0 };
+  for (const [secs, items] of Object.entries(bySale)) {
+    const o = out[hourOf(Number(secs))];
+    const units = items.reduce((n, l) => n + l.qty, 0);
+    o.total = Math.round((o.total + items.reduce((n, l) => n + l.amount, 0)) * 100) / 100;
+    o.units += units;
+    if (units > 0) o.trans += 1; // a return on its own isn't a sale
+  }
+  return out;
+}
+
+function deploySalesLog_(create) {
+  const ss = SpreadsheetApp.getActive();
+  let sh = ss.getSheetByName(DEPLOY.SALES_LOG_SHEET);
+  if (!sh && create) {
+    sh = ss.insertSheet(DEPLOY.SALES_LOG_SHEET);
+    sh.getRange(1, 1, 1, 5).setValues([["Day", "Seconds after midnight", "SKU", "Qty", "Amount"]]).setFontWeight("bold");
+    sh.getRange(1, 1, sh.getMaxRows(), 1).setNumberFormat("@");
+    sh.hideSheet();
+  }
+  return sh;
+}
+
+function deployReadSalesLog_(sh) {
+  if (!sh || sh.getLastRow() < 2) return [];
+  return sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues()
+    .filter((r) => String(r[0]).trim())
+    .map((r) => ({ day: String(r[0]), secs: Number(r[1]), sku: String(r[2]), qty: Number(r[3]), amount: Number(r[4]) }));
+}
+
+// Writes the day's Total / Transactions / UPT from the Sales Log into a
+// tab's tracker. Returns the day's totals.
+function deployApplySales_(sh, dayKey) {
+  const lay = deployTrackerLayout_(sh);
+  if (!lay || !lay.rowOf.Total) return null;
+  const lines = deployReadSalesLog_(deploySalesLog_(false)).filter((l) => l.day === dayKey);
+  const byHour = deploySalesByHour_(lines, lay.hours.map((h) => h.hour));
+  const fill = (label, pick) => {
+    if (!lay.rowOf[label]) return;
+    const row = lay.values[lay.rowOf[label] - lay.top - 1].slice();
+    for (const { hour, col } of lay.hours) row[col - 1] = byHour[hour] ? pick(byHour[hour]) : "";
+    sh.getRange(lay.rowOf[label], 1, 1, lay.lastCol).setValues([row]);
+  };
+  fill("Total", (o) => o.total);
+  fill("Transactions", (o) => o.trans);
+  fill("UPT", (o) => (o.trans ? Math.round((o.units / o.trans) * 100) / 100 : ""));
+  const sum = (k) => Object.values(byHour).reduce((n, o) => n + o[k], 0);
+  return { items: lines.length, total: Math.round(sum("total") * 100) / 100, trans: sum("trans") };
+}
+
+// Installable on-edit: something was pasted into the box.
+function deployHandlePaste_(sh, range) {
+  const lock = LockService.getDocumentLock();
+  lock.waitLock(30000);
+  try {
+    const ss = SpreadsheetApp.getActive();
+    const dayKey = sh.getRange("B1").getNote();
+    const { lines, skipped } = deployParseItemsSold_(range.getValues(), ss.getSpreadsheetTimeZone());
+    // Clear the box, ready for the next paste.
+    const c = deployPasteCol_();
+    const width = Math.max(range.getLastColumn(), c + DEPLOY.PASTE_WIDTH - 1) - c + 1;
+    sh.getRange(DEPLOY.FIRST_STAFF_ROW, c, sh.getMaxRows() - DEPLOY.FIRST_STAFF_ROW + 1, width).clear();
+    sh.getRange(DEPLOY.FIRST_STAFF_ROW, c, 1, DEPLOY.PASTE_WIDTH).setBackground("#fff59d");
+
+    const today = lines.filter((l) => l.day === dayKey);
+    const otherDays = lines.length - today.length;
+    if (!today.length) {
+      const why = !lines.length ? "Nothing in that paste looked like the MAO Items Sold export." : `That paste had no sales from ${deployDayLabel_(dayKey)} (${otherDays} from other days).`;
+      deployPasteStatus_(sh, why);
+      ss.toast(why, "Items sold", 8);
+      return;
+    }
+    const log = deploySalesLog_(true);
+    const merged = deployMergeSales_(deployReadSalesLog_(log), dayKey, today)
+      .filter((l) => !deployExpiredArchives_([DEPLOY.ARCHIVE_PREFIX + l.day], dayKey, DEPLOY.ARCHIVE_KEEP_DAYS).length);
+    if (log.getLastRow() > 1) log.getRange(2, 1, log.getLastRow() - 1, 5).clearContent();
+    if (merged.length) log.getRange(2, 1, merged.length, 5).setValues(merged.map((l) => [l.day, l.secs, l.sku, l.qty, l.amount]));
+
+    const day = deployApplySales_(sh, dayKey);
+    const time = Utilities.formatDate(new Date(), DEPLOY.TZ, "h:mm a");
+    const extra = [skipped ? `${skipped} unreadable rows skipped` : "", otherDays ? `${otherDays} from other days ignored` : ""].filter(Boolean).join(" · ");
+    const msg = `${time}: ${today.length} items read. Today so far $${Math.round(day.total).toLocaleString()} from ${day.trans} sales.` + (extra ? ` (${extra})` : "");
+    deployPasteStatus_(sh, msg);
+    ss.toast(msg, "Items sold", 8);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/* ---------- Hourly Notes ---------- */
+
+// Title bar, an hour header row, and one tall wrapping box per open hour,
+// each lined up under that hour on the grid. notes = { hour: text }.
+function deployWriteNotes_(sh, top, hours, notes) {
   const span = 60 / DEPLOY.SLOT_MIN, lastCol = DEPLOY.COL.GRID + deploySlotCount_() - 1;
-  const hours = deployNoteHours_();
   const pink = "#b5577a", grey = "#d9d9d9", filler = "#f4eff1";
 
   sh.getRange(top, 1, 1, lastCol).setBackground(pink);
@@ -794,33 +1214,38 @@ function deployWriteNotes_(sh, top, notes) {
   const head = new Array(lastCol).fill(""), body = new Array(lastCol).fill("");
   head[0] = "Hour";
   body[0] = "Notes";
-  hours.forEach((h, i) => {
-    const c = deployHourCol_(h);
-    head[c - 1] = deployFmtTime_(h * 60).replace("a", "am").replace("p", "pm");
-    body[c - 1] = notes[i] || "";
-  });
-  const block = sh.getRange(top + 1, 1, 2, lastCol);
-  block.setNumberFormat("@").setValues([head, body])
+  for (const h of hours) {
+    head[deployHourCol_(h) - 1] = deployHourLabel_(h);
+    body[deployHourCol_(h) - 1] = notes[h] || "";
+  }
+  sh.getRange(top + 1, 1, 2, lastCol).setNumberFormat("@").setValues([head, body])
     .setFontFamily("Arial").setFontSize(10)
     .setBorder(true, true, true, true, true, true, "#5b4a4e", SpreadsheetApp.BorderStyle.SOLID);
   for (const h of hours) sh.getRange(top + 1, deployHourCol_(h), 2, span).mergeAcross();
 
+  const first = deployHourCol_(hours[0]), end = deployHourCol_(hours[hours.length - 1]) + span;
   sh.getRange(top + 1, 1, 1, lastCol).setBackground(grey).setFontWeight("bold").setHorizontalAlignment("center");
   sh.getRange(top + 2, 1).setFontWeight("bold").setHorizontalAlignment("center").setVerticalAlignment("middle");
-  sh.getRange(top + 1, 2, 2, DEPLOY.COL.GRID - 2).setBackground(filler);
-  sh.getRange(top + 2, DEPLOY.COL.GRID, 1, lastCol - DEPLOY.COL.GRID + 1)
-    .setWrap(true).setVerticalAlignment("top").setHorizontalAlignment("left");
+  sh.getRange(top + 1, 2, 2, first - 2).setBackground(filler).setBorder(null, null, null, null, false, false);
+  if (end <= lastCol) sh.getRange(top + 1, end, 2, lastCol - end + 1).setBackground(filler).setBorder(null, null, null, null, false, false);
+  sh.getRange(top + 2, first, 1, end - first).setWrap(true).setVerticalAlignment("top").setHorizontalAlignment("left");
   sh.setRowHeight(top, 26);
   sh.setRowHeight(top + 1, 22);
   sh.setRowHeight(top + 2, DEPLOY.NOTES.BOX_HEIGHT);
 }
 
-// The text in each hour's box, in hour order ([] if the tab has no notes).
+// { hour: text } from a tab's notes ({} if it has none).
 function deployReadNotes_(sh) {
   const hit = sh.createTextFinder(DEPLOY.NOTES.TITLE).matchEntireCell(true).findNext();
-  if (!hit) return [];
-  const row = sh.getRange(hit.getRow() + 2, 1, 1, DEPLOY.COL.GRID + deploySlotCount_() - 1).getValues()[0];
-  return deployNoteHours_().map((h) => row[deployHourCol_(h) - 1]);
+  if (!hit) return {};
+  const lastCol = DEPLOY.COL.GRID + deploySlotCount_() - 1;
+  const [head, body] = sh.getRange(hit.getRow() + 1, 1, 2, lastCol).getValues();
+  const out = {};
+  head.forEach((v, i) => {
+    const m = i > 0 && String(v).trim() ? deployParseBreakTime_(String(v).trim()) : null;
+    if (m !== null && String(body[i]).trim()) out[Math.floor(m / 60)] = body[i];
+  });
+  return out;
 }
 
 function deployTrackerRow_(sh) {
@@ -927,5 +1352,5 @@ function getDeploymentForApp() {
 
 // Node test harness hook (ignored by Apps Script)
 if (typeof module !== "undefined") {
-  module.exports = { DEPLOY, DEFAULT_DEPLOY_CODES, deployParseIcs_, deployBlocksForDay_, deployBuildRoster_, deployScheduleBreaks_, deploySlotsFor_, deployBlocksFromSlots_, deployFmtTime_, deployDayLabel_, deployRequiredBreaks_, deployLocalParts_, DEPLOY_TRACKER_ROWS, deployTrackerValues_, deployWriteTracker_, deployReadTracker_, deployHourCol_, deployColLetter_, deployWriteSheet_, getDeploymentForApp, deployParseBreakTime_, deployBreaksFromSlots_, deployMoveBreaksInSlots_, deployOnEdit, deploySplitGlobalIcs_, deployBuild, deployInitials_, deployInitialsClashes_, deployWriteNotes_, deployReadNotes_, deployExpiredArchives_, deployTidyArchives_ };
+  module.exports = { DEPLOY, DEFAULT_DEPLOY_CODES, deployParseIcs_, deployBlocksForDay_, deployBuildRoster_, deployScheduleBreaks_, deploySlotsFor_, deployBlocksFromSlots_, deployFmtTime_, deployDayLabel_, deployRequiredBreaks_, deployLocalParts_, DEPLOY_TRACKER_ROWS, deployTrackerValues_, deployWriteTracker_, deployReadTracker_, deployHourCol_, deployColLetter_, deployWriteSheet_, getDeploymentForApp, deployParseBreakTime_, deployBreaksFromSlots_, deployMoveBreaksInSlots_, deployOnEdit, deploySplitGlobalIcs_, deployBuild, deployInitials_, deployInitialsClashes_, deployWriteNotes_, deployReadNotes_, deployExpiredArchives_, deployTidyArchives_, deployParsePlan_, deployDayPlan_, deployParseItemsSold_, deployMergeSales_, deploySalesByHour_, deployHandlePaste_, deployReadPlan_, deployGoalCells_, deployPasteCol_, deployTrackerLayout_, deployFillFloorLeads_, deployApplySales_, deployMenuSetMonthGoal, deploySameWeek_ };
 }
