@@ -661,9 +661,13 @@ function deployWriteSheet_(dayKey, roster, codes) {
   }
 
   // Colors come from conditional formatting, so typing a code recolors the cell.
+  // Touching cells with the same code read as one block: the code shows only
+  // in the block's first cell (the rest have their text in the fill colour)
+  // and there are no lines between cells. A different code typed inside a
+  // block splits it on its own, since the cell after it starts a new block.
   const grid = sh.getRange(DEPLOY.FIRST_STAFF_ROW, C.GRID, rows, n);
-  sh.setConditionalFormatRules(codes.map((c) =>
-    SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo(c.code).setBackground(c.bg).setFontColor(c.fg).setRanges([grid]).build()));
+  sh.setConditionalFormatRules(deployGridRules_(codes, grid));
+  grid.setBorder(null, null, null, null, false, null);
 
   // Legend
   const lc = lastGridCol + 2;
@@ -698,6 +702,21 @@ function deployWriteSheet_(dayKey, roster, codes) {
 }
 
 /* ---------- edits on the day ---------- */
+
+// Grid colour rules, first match wins: a cell that continues a block (same
+// code as the cell to its left) gets its code's fill with the text hidden;
+// any other cell with a code gets the fill and the code shown.
+function deployGridRules_(codes, grid) {
+  const here = deployColLetter_(DEPLOY.COL.GRID) + DEPLOY.FIRST_STAFF_ROW;
+  const left = deployColLetter_(DEPLOY.COL.GRID - 1) + DEPLOY.FIRST_STAFF_ROW;
+  const q = (code) => '"' + String(code).replace(/"/g, '""') + '"';
+  const rule = () => SpreadsheetApp.newConditionalFormatRule();
+  return [
+    ...codes.map((c) => rule().whenFormulaSatisfied(`=AND(${here}=${q(c.code)},${left}=${q(c.code)})`)
+      .setBackground(c.bg).setFontColor(c.bg).setRanges([grid]).build()),
+    ...codes.map((c) => rule().whenTextEqualTo(c.code).setBackground(c.bg).setFontColor(c.fg).setRanges([grid]).build()),
+  ];
+}
 
 // Installable on-edit trigger (named so it can't clash with an onEdit in
 // Code.gs). Typing a time in BREAK / 15 MIN moves that person's B cells on
@@ -1417,5 +1436,5 @@ function getDeploymentForApp() {
 
 // Node test harness hook (ignored by Apps Script)
 if (typeof module !== "undefined") {
-  module.exports = { DEPLOY, DEFAULT_DEPLOY_CODES, deployParseIcs_, deployBlocksForDay_, deployBuildRoster_, deployScheduleBreaks_, deploySlotsFor_, deployBlocksFromSlots_, deployFmtTime_, deployDayLabel_, deployRequiredBreaks_, deployLocalParts_, DEPLOY_TRACKER_ROWS, deployTrackerValues_, deployWriteTracker_, deployReadTracker_, deployHourCol_, deployColLetter_, deployWriteSheet_, getDeploymentForApp, deployParseBreakTime_, deployBreaksFromSlots_, deployMoveBreaksInSlots_, deployOnEdit, deploySplitGlobalIcs_, deployBuild, deployInitials_, deployInitialsClashes_, deployWriteNotes_, deployReadNotes_, deployExpiredArchives_, deployTidyArchives_, deployParsePlan_, deployDayPlan_, deployParseItemsSold_, deployMergeSales_, deploySalesByHour_, deployHandlePaste_, deployReadPlan_, deployGoalCells_, deployPasteCol_, deployTrackerLayout_, deployFillFloorLeads_, deployApplySales_, deployMenuSetMonthGoal, deploySameWeek_, deployBreakSlotKey_, deploySyncBreaks_ };
+  module.exports = { DEPLOY, DEFAULT_DEPLOY_CODES, deployParseIcs_, deployBlocksForDay_, deployBuildRoster_, deployScheduleBreaks_, deploySlotsFor_, deployBlocksFromSlots_, deployFmtTime_, deployDayLabel_, deployRequiredBreaks_, deployLocalParts_, DEPLOY_TRACKER_ROWS, deployTrackerValues_, deployWriteTracker_, deployReadTracker_, deployHourCol_, deployColLetter_, deployWriteSheet_, getDeploymentForApp, deployParseBreakTime_, deployBreaksFromSlots_, deployMoveBreaksInSlots_, deployOnEdit, deploySplitGlobalIcs_, deployBuild, deployInitials_, deployInitialsClashes_, deployWriteNotes_, deployReadNotes_, deployExpiredArchives_, deployTidyArchives_, deployParsePlan_, deployDayPlan_, deployParseItemsSold_, deployMergeSales_, deploySalesByHour_, deployHandlePaste_, deployReadPlan_, deployGoalCells_, deployPasteCol_, deployTrackerLayout_, deployFillFloorLeads_, deployApplySales_, deployMenuSetMonthGoal, deploySameWeek_, deployBreakSlotKey_, deploySyncBreaks_, deployGridRules_ };
 }

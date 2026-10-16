@@ -43,6 +43,11 @@ working exactly as before.
 
 ## Day to day
 
+- **Touching cells with the same code show as one block.** The code is
+  written once, at the start, with no lines inside the block (hour lines
+  stay). Every cell still holds its code, so editing works as before. Put a
+  different code inside a block (a `B`, say) and it splits into two blocks
+  around it.
 - **Leads can edit on the fly.** Type a code into any grid cell (`FL`, `PG`,
   `PROD`, `B`, …). The color follows the code automatically. Select several
   cells, type, and press **Ctrl/Cmd + Enter** to fill them all at once.
