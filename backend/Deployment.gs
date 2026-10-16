@@ -407,10 +407,31 @@ function deployBreaksFromSlots_(slots) {
     if (last && last.end === i) last.end = i + 1;
     else runs.push({ start: i, end: i + 1 });
   });
-  const time = (i) => deployFmtTime_(DEPLOY.GRID_START_MIN + i * DEPLOY.SLOT_MIN);
-  const thirty = runs.find((r) => r.end - r.start >= 2);
-  const fifteens = runs.filter((r) => r !== thirty).slice(0, 2);
-  return [thirty ? time(thirty.start) : "", fifteens[0] ? time(fifteens[0].start) : "", fifteens[1] ? time(fifteens[1].start) : ""];
+  // A block of B can be breaks that touch (a 15 right before a 30 is three
+  // slots): split it into one 30 and then 15s.
+  let thirty = null;
+  const fifteens = [];
+  for (const r of runs) {
+    for (let at = r.start; at < r.end;) {
+      if (thirty === null && r.end - at >= 2) { thirty = at; at += 2; } else { fifteens.push(at); at += 1; }
+    }
+  }
+  const time = (i) => (i === null || i === undefined ? "" : deployFmtTime_(DEPLOY.GRID_START_MIN + i * DEPLOY.SLOT_MIN));
+  return [time(thirty), time(fifteens[0]), time(fifteens[1])];
+}
+
+// The grid slots the break times cover, as a sorted "i,j,…" key; null if a
+// time can't be read.
+function deployBreakSlotKey_(b30, b15a, b15b) {
+  const idx = [];
+  for (const [t, minutes] of [[b30, 30], [b15a, 15], [b15b, 15]]) {
+    if (!String(t || "").trim()) continue;
+    const at = deployParseBreakTime_(t);
+    if (at === null) return null;
+    const first = Math.floor((at - DEPLOY.GRID_START_MIN) / DEPLOY.SLOT_MIN);
+    for (let k = first; k < first + minutes / DEPLOY.SLOT_MIN; k++) idx.push(k);
+  }
+  return [...new Set(idx)].sort((a, b) => a - b).join(",");
 }
 
 // Moves the grid's B cells to the times typed in the break columns. The slots
@@ -685,11 +706,28 @@ function deployWriteSheet_(dayKey, roster, codes) {
 function deployOnEdit(e) {
   const range = e && e.range;
   if (!range || range.getSheet().getName() !== DEPLOY.SHEET) return;
-  const sh = range.getSheet(), C = DEPLOY.COL, n = deploySlotCount_();
+  const sh = range.getSheet();
   if (range.getColumn() >= deployPasteCol_() && range.getLastRow() >= DEPLOY.FIRST_STAFF_ROW) {
     deployHandlePaste_(sh, range);
     return;
   }
+  // One edit at a time: a quick second edit waits for the first to finish
+  // and then reads the row fresh, so neither undoes the other.
+  const lock = LockService.getDocumentLock();
+  if (!lock.tryLock(20000)) return;
+  try {
+    deploySyncBreaks_(sh, range);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// Keeps a row's BREAK / 15 MIN times and its B cells in step after an edit.
+// Only cells that actually change are written, so nothing else typed in the
+// meantime is overwritten, and times that still match the grid are left
+// exactly as typed.
+function deploySyncBreaks_(sh, range) {
+  const C = DEPLOY.COL, n = deploySlotCount_();
   const tracker = deployTrackerRow_(sh);
   const r0 = Math.max(range.getRow(), DEPLOY.FIRST_STAFF_ROW);
   const r1 = Math.min(range.getLastRow(), tracker ? tracker - 1 : sh.getLastRow());
@@ -698,21 +736,48 @@ function deployOnEdit(e) {
   const touchesBreaks = c0 <= C.BREAK15B && c1 >= C.BREAK30;
   if (r1 < r0 || (!touchesGrid && !touchesBreaks)) return;
 
+  let gridChanged = touchesGrid;
   const rows = sh.getRange(r0, 1, r1 - r0 + 1, C.GRID + n - 1).getDisplayValues();
   rows.forEach((r, i) => {
-    let slots = r.slice(C.GRID - 1);
+    const row = r0 + i;
+    const slots = r.slice(C.GRID - 1);
     if (!slots.some((x) => String(x).trim())) return; // nobody on this row
+    const typed = [r[C.BREAK30 - 1], r[C.BREAK15A - 1], r[C.BREAK15B - 1]];
+
     if (!touchesGrid) {
-      slots = deployMoveBreaksInSlots_(slots, r[C.BREAK30 - 1], r[C.BREAK15A - 1], r[C.BREAK15B - 1]);
-      if (!slots) return; // unreadable time: leave it for the lead to fix
-      sh.getRange(r0 + i, C.GRID, 1, n).setValues([slots]);
+      // Times were typed: move the B cells to match.
+      const moved = deployMoveBreaksInSlots_(slots, typed[0], typed[1], typed[2]);
+      if (!moved) return; // a time that can't be read, or is outside the shift: left for the lead
+      moved.forEach((v, k) => {
+        if (v !== slots[k]) { sh.getRange(row, C.GRID + k).setValue(v); gridChanged = true; }
+      });
+      // Tidy just the times that were typed here ("1:30" → "1:30p").
+      for (let k = 0; k < 3; k++) {
+        const col = C.BREAK30 + k;
+        if (col < c0 || col > c1) continue;
+        const cell = sh.getRange(row, col).setBackground(null).clearNote();
+        if (!String(typed[k]).trim()) continue;
+        const tidy = deployFmtTime_(deployParseBreakTime_(typed[k]));
+        if (tidy !== typed[k]) cell.setValue(tidy);
+      }
+      return;
     }
-    const breaks = deployBreaksFromSlots_(slots);
-    if (breaks.join("|") !== [r[C.BREAK30 - 1], r[C.BREAK15A - 1], r[C.BREAK15B - 1]].join("|")) {
-      sh.getRange(r0 + i, C.BREAK30, 1, 3).setValues([breaks]).setBackground(null).clearNote();
-    }
+
+    // The grid was edited: if the times still describe its B cells, leave
+    // them; otherwise rewrite the ones that changed.
+    const onGrid = slots.map((x, k) => (String(x).trim().toUpperCase() === DEPLOY.BREAK_CODE ? k : -1)).filter((k) => k >= 0).join(",");
+    if (deployBreakSlotKey_(typed[0], typed[1], typed[2]) === onGrid) return;
+    const [b30, ...b15] = deployBreaksFromSlots_(slots);
+    // a 15 that didn't move keeps its column; the moved one takes the other
+    const norm = (t) => { const m = deployParseBreakTime_(t); return m === null ? "" : deployFmtTime_(m); };
+    const keepAt = [1, 2].map((k) => (b15.indexOf(norm(typed[k])) >= 0 && norm(typed[k]) ? norm(typed[k]) : ""));
+    const rest = b15.filter((t) => t && keepAt.indexOf(t) < 0);
+    const next = [b30, keepAt[0] || rest.shift() || "", keepAt[1] || rest.shift() || ""];
+    next.forEach((t, k) => {
+      if (t !== typed[k] && !(t && norm(typed[k]) === t)) sh.getRange(row, C.BREAK30 + k).setValue(t).setBackground(null).clearNote();
+    });
   });
-  if (touchesGrid) deployFillFloorLeads_(sh);
+  if (gridChanged) deployFillFloorLeads_(sh);
 }
 
 function deployEnsureEditSync_() {
@@ -1352,5 +1417,5 @@ function getDeploymentForApp() {
 
 // Node test harness hook (ignored by Apps Script)
 if (typeof module !== "undefined") {
-  module.exports = { DEPLOY, DEFAULT_DEPLOY_CODES, deployParseIcs_, deployBlocksForDay_, deployBuildRoster_, deployScheduleBreaks_, deploySlotsFor_, deployBlocksFromSlots_, deployFmtTime_, deployDayLabel_, deployRequiredBreaks_, deployLocalParts_, DEPLOY_TRACKER_ROWS, deployTrackerValues_, deployWriteTracker_, deployReadTracker_, deployHourCol_, deployColLetter_, deployWriteSheet_, getDeploymentForApp, deployParseBreakTime_, deployBreaksFromSlots_, deployMoveBreaksInSlots_, deployOnEdit, deploySplitGlobalIcs_, deployBuild, deployInitials_, deployInitialsClashes_, deployWriteNotes_, deployReadNotes_, deployExpiredArchives_, deployTidyArchives_, deployParsePlan_, deployDayPlan_, deployParseItemsSold_, deployMergeSales_, deploySalesByHour_, deployHandlePaste_, deployReadPlan_, deployGoalCells_, deployPasteCol_, deployTrackerLayout_, deployFillFloorLeads_, deployApplySales_, deployMenuSetMonthGoal, deploySameWeek_ };
+  module.exports = { DEPLOY, DEFAULT_DEPLOY_CODES, deployParseIcs_, deployBlocksForDay_, deployBuildRoster_, deployScheduleBreaks_, deploySlotsFor_, deployBlocksFromSlots_, deployFmtTime_, deployDayLabel_, deployRequiredBreaks_, deployLocalParts_, DEPLOY_TRACKER_ROWS, deployTrackerValues_, deployWriteTracker_, deployReadTracker_, deployHourCol_, deployColLetter_, deployWriteSheet_, getDeploymentForApp, deployParseBreakTime_, deployBreaksFromSlots_, deployMoveBreaksInSlots_, deployOnEdit, deploySplitGlobalIcs_, deployBuild, deployInitials_, deployInitialsClashes_, deployWriteNotes_, deployReadNotes_, deployExpiredArchives_, deployTidyArchives_, deployParsePlan_, deployDayPlan_, deployParseItemsSold_, deployMergeSales_, deploySalesByHour_, deployHandlePaste_, deployReadPlan_, deployGoalCells_, deployPasteCol_, deployTrackerLayout_, deployFillFloorLeads_, deployApplySales_, deployMenuSetMonthGoal, deploySameWeek_, deployBreakSlotKey_, deploySyncBreaks_ };
 }

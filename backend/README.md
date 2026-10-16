@@ -52,7 +52,9 @@ working exactly as before.
   cells move on the grid; the role they had there fills the old slot.
   Or move the B cells on the grid, and the break times update to match.
   A time that can't be read, or that falls outside the person's shift, is
-  left as typed for you to fix. This needs the edit trigger, which the
+  left as typed for you to fix.
+  Breaks can sit right next to each other (a 15 straight before a 30), and
+  quick edits one after another are handled in order, so none is undone. This needs the edit trigger, which the
   first build after updating `Deployment.gs` installs automatically.
 - **Edits are safe from the auto-build.** It never touches a day that's
   already been built. **Build today's deployment** from the menu does rebuild
