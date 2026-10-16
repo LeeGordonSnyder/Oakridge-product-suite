@@ -654,7 +654,9 @@ function deployWriteSheet_(dayKey, roster, codes) {
     const col = b.duration === 30 ? C.BREAK30 : C.BREAK15A + p.breaks.filter((x) => x.duration === 15).indexOf(b);
     sh.getRange(DEPLOY.FIRST_STAFF_ROW + i, col).setBackground("#ffe1e1").setNote("Couldn't keep 2 people / a Floor Lead on the floor for this break — please check it.");
   }));
-  // hour dividers
+  // No lines between cells inside the grid, so touching same-code cells read
+  // as one block; then the hour dividers on top.
+  sh.getRange(DEPLOY.FIRST_STAFF_ROW, C.GRID, rows, n).setBorder(null, null, null, null, false, null);
   for (let h = DEPLOY.GRID_START_MIN; h < DEPLOY.GRID_END_MIN; h += 60) {
     const col = C.GRID + (h - DEPLOY.GRID_START_MIN) / DEPLOY.SLOT_MIN;
     sh.getRange(DEPLOY.HEADER_ROW, col, rows + 1, 1).setBorder(null, true, null, null, null, null, "#894554", SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
@@ -667,7 +669,6 @@ function deployWriteSheet_(dayKey, roster, codes) {
   // block splits it on its own, since the cell after it starts a new block.
   const grid = sh.getRange(DEPLOY.FIRST_STAFF_ROW, C.GRID, rows, n);
   sh.setConditionalFormatRules(deployGridRules_(codes, grid));
-  grid.setBorder(null, null, null, null, false, null);
 
   // Legend
   const lc = lastGridCol + 2;
