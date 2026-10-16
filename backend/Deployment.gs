@@ -99,8 +99,8 @@ const DEPLOY_TRACKER_ROWS = [
 
 // Seeded once on the Deployment Codes tab, then edited there.
 const DEFAULT_STORE_HOURS = [
-  ["Monday", "10am", "7pm"], ["Tuesday", "10am", "7pm"], ["Wednesday", "10am", "7pm"], ["Thursday", "10am", "7pm"],
-  ["Friday", "10am", "7pm"], ["Saturday", "10am", "7pm"], ["Sunday", "10am", "7pm"],
+  ["Monday", "10am", "7pm"], ["Tuesday", "10am", "7pm"], ["Wednesday", "10am", "7pm"], ["Thursday", "10am", "9pm"],
+  ["Friday", "10am", "9pm"], ["Saturday", "10am", "9pm"], ["Sunday", "11am", "7pm"],
 ];
 const DEFAULT_SALES_CURVE = [
   ["8am", ""], ["9am", ""], ["10am", 0.1], ["11am", 0.1], ["12pm", 0.15], ["1pm", 0.15], ["2pm", 0.2],

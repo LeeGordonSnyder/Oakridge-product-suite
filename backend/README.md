@@ -107,8 +107,10 @@ the codes:
 - **% of sales**: each hour's share of the daily goal. An hour's **Sales
   Target** is Goal × its %, and the CLOSE target is the Goal.
 
-They start as 10am–7pm every day, with 10 / 10 / 15 / 15 / 20 / 20 / 10 /
-10 / 10%. Edit either table and the next build uses it. The table's
+They start with the store's hours (Mon–Wed 10am–7pm, Thu–Sat 10am–9pm,
+Sun 11am–7pm) and 10 / 10 / 15 / 15 / 20 / 20 / 10 / 10 / 10% for 10am–6pm.
+7pm and 8pm have no % yet, so on the late days those hours get no target
+until you fill them in. Edit either table and the next build uses it. The table's
 **Total** shows what the hours add up to. As set now that's 120%, so the
 hourly targets add up to more than the Goal.
 
