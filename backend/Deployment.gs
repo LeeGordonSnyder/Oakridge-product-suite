@@ -654,13 +654,19 @@ function deployWriteSheet_(dayKey, roster, codes) {
     const col = b.duration === 30 ? C.BREAK30 : C.BREAK15A + p.breaks.filter((x) => x.duration === 15).indexOf(b);
     sh.getRange(DEPLOY.FIRST_STAFF_ROW + i, col).setBackground("#ffe1e1").setNote("Couldn't keep 2 people / a Floor Lead on the floor for this break — please check it.");
   }));
-  // No lines between cells inside the grid, so touching same-code cells read
-  // as one block; then the hour dividers on top.
-  sh.getRange(DEPLOY.FIRST_STAFF_ROW, C.GRID, rows, n).setBorder(null, null, null, null, false, null);
+  // No lines between the cells inside each hour, so touching same-code cells
+  // read as one block, and an hour line at every hour. Sheets keeps a line
+  // on both cells that share it, and an edge that one side says "none"
+  // can vanish after it's drawn, so each hour line is set on both sides
+  // and the in-hour clearing never touches an hour edge.
+  const per = 60 / DEPLOY.SLOT_MIN, line = "#894554", medium = SpreadsheetApp.BorderStyle.SOLID_MEDIUM;
   for (let h = DEPLOY.GRID_START_MIN; h < DEPLOY.GRID_END_MIN; h += 60) {
     const col = C.GRID + (h - DEPLOY.GRID_START_MIN) / DEPLOY.SLOT_MIN;
-    sh.getRange(DEPLOY.HEADER_ROW, col, rows + 1, 1).setBorder(null, true, null, null, null, null, "#894554", SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
+    sh.getRange(DEPLOY.FIRST_STAFF_ROW, col, rows, per).setBorder(null, null, null, null, false, null);
+    sh.getRange(DEPLOY.HEADER_ROW, col, rows + 1, 1).setBorder(null, true, null, null, null, null, line, medium);
+    sh.getRange(DEPLOY.HEADER_ROW, col - 1, rows + 1, 1).setBorder(null, null, null, true, null, null, line, medium);
   }
+  sh.getRange(DEPLOY.HEADER_ROW, C.GRID + n - 1, rows + 1, 1).setBorder(null, null, null, true, null, null, line, medium); // after 9pm
 
   // Colors come from conditional formatting, so typing a code recolors the cell.
   // Touching cells with the same code read as one block: the code shows only
