@@ -46,11 +46,32 @@ DATA.deployment = {
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify(DATA[sheet] ?? []) });
   });
 
+  // Where the video's camera zooms on each screen: the element's box in
+  // screen points (393 × 852), written to screens/rects.json.
+  const FOCUS = {
+    '01-home': '#home-shift', '02-home-exceptions': '#home-exceptions .exception',
+    '03-catalog-search': '#catalog-results', '04-catalog-detail': '#catalog-detail .tag-box', '05-catalog-assign': '#catalog-detail .tag-box',
+    '06-count-active': '#count-active-card', '07-counts-flagged': '#count-list > :first-child', '08-counts-list': '#count-list',
+    '09-consol-list': '#consol-list > :nth-child(2)', '10-consol-holding': '#consol-holding', '11-consol-mao': '#mao-reminder-modal .modal-inner',
+    '13-receiving-paste': '#view-receiving details.panel', '14-receiving-scan': '#scanner-modal .scanner-modal-inner',
+    '16-receiving-awaiting': '#recv-awaiting-section', '17-floor-check': '#floor-check-list > :first-child',
+    '18-floor-sizes': '#floor-needed-modal .modal-inner', '19-floor-replen': '#floor-replen-list > :first-child', '20-floor-86': '#floor-panel-86 .line-card',
+  };
+  const rects = {};
+  const measure = async (name) => {
+    if (!FOCUS[name]) return;
+    const r = await page.locator(FOCUS[name]).first().boundingBox().catch(() => null);
+    if (!r) return console.log('  no focus box for', name);
+    const y0 = Math.max(0, r.y), y1 = Math.min(852, r.y + r.height);
+    rects[name] = { x: Math.round(r.x), y: Math.round(y0), w: Math.round(r.width), h: Math.round(y1 - y0) };
+  };
   const shot = async (name, scrollTo) => {
-    if (scrollTo !== undefined) await page.evaluate((y) => window.scrollTo(0, typeof y === 'number' ? y : document.querySelector(y).getBoundingClientRect().top + window.scrollY - 70), scrollTo);
+    // clear toasts and status lines first: removing them shifts the page
     await page.evaluate(() => { const t = document.getElementById('toast'); if (t) t.hidden = true; document.querySelectorAll('.status-msg').forEach((e) => (e.textContent = '')); });
+    if (scrollTo !== undefined) await page.evaluate((y) => window.scrollTo(0, typeof y === 'number' ? y : document.querySelector(y).getBoundingClientRect().top + window.scrollY - 70), scrollTo);
     await page.waitForTimeout(300);
     await page.screenshot({ path: path.join(OUT, `${name}.png`) });
+    await measure(name);
     console.log('shot', name);
   };
   const go = async (route) => {
@@ -132,7 +153,7 @@ DATA.deployment = {
     setStatus('scanner-modal-feedback', 'Held 8069559026403612 (PO 6390185303). 2 boxes held.', false);
   });
   await page.waitForTimeout(200);
-  await page.screenshot({ path: path.join(OUT, '14-receiving-scan.png') }); console.log('shot', '14-receiving-scan');
+  await page.screenshot({ path: path.join(OUT, '14-receiving-scan.png') }); await measure('14-receiving-scan'); console.log('shot', '14-receiving-scan');
   await page.evaluate(() => { document.getElementById('scanner-modal').hidden = true; document.getElementById('scanner-modal-view').innerHTML = ''; renderReceiving(); });
   await shot('15-receiving-held', '#recv-holding-section');
   await page.click('#recv-mark-physical-btn');
@@ -158,5 +179,6 @@ DATA.deployment = {
   await go('floor/86');
   await shot('20-floor-86');
 
+  fs.writeFileSync(path.join(OUT, 'rects.json'), JSON.stringify(rects, null, 1));
   await browser.close();
 })().catch((e) => { console.error('FAILED', e); process.exit(1); });
