@@ -158,8 +158,8 @@ const ART = {
     <g fill="none" stroke="${G.mid}" stroke-width="5"><circle r="${r}"/><rect x="-28" y="${-r - 60}" width="56" height="34" rx="8"/><line x1="0" y1="${-r - 26}" x2="0" y2="${-r}"/>
       <line x1="${r * 0.71}" y1="${-r * 0.84}" x2="${r * 0.84}" y2="${-r * 0.97}" stroke-linecap="round"/><circle r="${r - 22}" stroke="${G.faint}" stroke-width="2"/></g>`,
 };
-const art = (parent, key, { x, y, w, h }) => {
-  const s = el("div", "abs", `<svg viewBox="0 0 1200 640" width="${w}" height="${h}" overflow="visible">${ART[key]()}</svg>`, parent);
+const art = (parent, key, { x, y, w, h }, svg) => {
+  const s = el("div", "abs", `<svg viewBox="0 0 1200 640" width="${w}" height="${h}" overflow="visible">${svg || ART[key]()}</svg>`, parent);
   return style(s, { left: x + "px", top: y + "px" });
 };
 const q = (root, sel) => root.querySelector(sel);
@@ -168,45 +168,93 @@ const pop = (e, p, from = 0.6) => { e.style.opacity = p; e.style.transformBox = 
 
 /* ============================ ACT 1 · the reveal ============================ */
 
-scene(36, (root, dur) => {
-  const glow = style(el("div", "abs", "", root), { inset: 0, background: "radial-gradient(ellipse at 50% 64%, #f5f5f7 0%, #fff 62%)" });
-  const mods = ["Product Catalog", "Counts", "Consolidations", "Receiving", "Floor Stock"];
-  const cards = mods.map((name, i) => el("div", "card", `<div class="n">0${i + 1}</div><div class="t display">${name}</div>`, root));
+// Little shapes that burst out from behind the phone as it wakes: tags,
+// boxes, ticks, barcodes, rings, in the app's colours.
+const BURST = (() => {
+  const C = ["#9b4a63", "#f2b8c8", "#2FAE4E", "#1F6FC1", "#F4A93B", "#c7c7cc", "#9b4a63", "#8E7CC3"];
+  const shapes = [
+    (c) => `<path d="M4 4 h34 l14 16 l-14 16 h-34 z" fill="${c}"/><circle cx="14" cy="20" r="4" fill="#fff"/>`,
+    (c) => `<rect x="4" y="12" width="40" height="32" rx="4" fill="${c}"/><path d="M4 12 l20 -10 l20 10" fill="none" stroke="${c}" stroke-width="4" stroke-linejoin="round"/>`,
+    (c) => `<circle cx="24" cy="24" r="22" fill="${c}"/><path d="M13 24 l8 8 l15 -16" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>`,
+    (c) => [0, 1, 2, 3, 4, 5, 6].map((i) => `<rect x="${4 + i * 6}" y="6" width="${i % 2 ? 2.5 : 4}" height="36" fill="${c}"/>`).join(""),
+    (c) => `<circle cx="24" cy="24" r="18" fill="none" stroke="${c}" stroke-width="7"/>`,
+    (c) => `<rect x="6" y="6" width="36" height="36" rx="10" fill="${c}"/>`,
+    (c) => `<circle cx="24" cy="24" r="10" fill="${c}"/>`,
+    (c) => `<path d="M24 4 l6 14 l15 1 l-11 10 l4 15 l-14 -8 l-14 8 l4 -15 l-11 -10 l15 -1 z" fill="${c}"/>`,
+  ];
+  const out = [];
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * Math.PI * 2 + (i % 3) * 0.17;
+    out.push({ svg: shapes[i % shapes.length](C[(i * 3) % C.length]), a, d: 300 + ((i * 97) % 5) * 55, size: 0.9 + ((i * 53) % 4) * 0.25, spin: ((i % 2 ? 1 : -1) * (40 + (i * 29) % 80)) });
+  }
+  return out;
+})();
+
+scene(37, (root, dur) => {
+  const glow = style(el("div", "abs", "", root), { inset: 0, background: "radial-gradient(ellipse at 50% 55%, #f5f5f7 0%, #fff 60%)" });
+  const bits = BURST.map((b) => style(el("div", "abs", `<svg width="48" height="48" viewBox="0 0 48 48" overflow="visible">${b.svg}</svg>`, root), { width: "48px", height: "48px" }));
+  const fns = [
+    ["01", "Product Catalog", "04-catalog-detail"], ["02", "Counts", "08-counts-list"], ["03", "Consolidations", "09-consol-list"],
+    ["04", "Receiving", "16-receiving-awaiting"], ["05", "Floor Stock", "17-floor-check"],
+  ];
+  const items = fns.map(([n, name]) => el("div", "abs", `<div class="kicker" style="letter-spacing:.1em">${n}</div><div class="h3 display" style="margin-top:4px">${name}</div>`, root));
   const ph = phone(root);
   ph.root.style.transformOrigin = "50% 50%";
-  ph.show("01-home", "01-home", 0);
-  const t1 = text(root, { x: 960, y: 90, w: 1500, align: "center", lines: [["sub", "Every day, our floor runs on a dozen small jobs.", { color: "var(--ink)", fontSize: "42px" }]] });
-  const words = ["Tags.", "Counts.", "Consols.", "Boxes.", "Replen."];
-  const t2 = text(root, { x: 960, y: 84, w: 1500, align: "center", lines: [["h3 display", words.map((w) => `<span class="wd" style="display:inline-block;margin:0 14px">${w}</span>`).join("")]] });
-  const wds = qa(t2.box, ".wd");
-  const t3 = text(root, { x: 960, y: 70, w: 1600, align: "center", lines: [["sub", "Until now, each one had its own paper, its own wall, its own whiteboard.", { color: "var(--ink)", fontSize: "40px" }]] });
-  const t4 = text(root, { x: 960, y: 720, w: 1600, align: "center", lines: [["h1 display", "Oakridge Product Suite"], ["sub", "Rebuilt for the floor.", { fontSize: "38px", marginTop: "18px" }]] });
+  const t1 = text(root, { x: 960, y: 950, w: 1600, align: "center", lines: [["sub", "Product management has many facets.", { color: "var(--ink)", fontSize: "44px" }]] });
+  const title = text(root, { x: 960, y: 760, w: 1600, align: "center", lines: [["h1 display", "Oakridge Product Suite"]] });
+  const LIST_T0 = 10.2, EACH = 3.3;
   return (lt) => {
     root.style.opacity = fade(lt, dur, 0.01, 1.2);
-    // the phone: top-down, slowly turning; sinks while the cards rise; stands up for the title
-    const intro = ease.io(prog(lt, 1.5, 18));
-    let r = lerp(-18, -6, intro), sc = lerp(0.8, 0.92, intro), cx = 960, cy = 600;
-    const sink = ease.io(prog(lt, 18, 20.5));
-    sc = lerp(sc, 0.74, sink); cy = lerp(cy, 690, sink);
-    const up = ease.io(prog(lt, 26.5, 29.5));
-    r = lerp(r, 0, up); sc = lerp(sc, 0.62, up); cy = lerp(cy, 400, up);
-    style(ph.root, { left: cx - PW / 2 + "px", top: cy - PH / 2 + "px", transform: `rotate(${r}deg) scale(${sc})`, opacity: ease.soft(prog(lt, 1.5, 3.5)) });
-    ph.dark(1 - ease.soft(prog(lt, 9, 10.2)));
-    glow.style.opacity = 1 - up;
-    // the five cards fan out of the phone, then fold back in
-    cards.forEach((c, i) => {
-      const k = i - 2;
-      const out = ease.out(prog(lt, 18.6 + i * 0.22, 19.9 + i * 0.22));
-      const back = ease.in(prog(lt, 26 + i * 0.1, 27.1 + i * 0.1));
-      const p = out * (1 - back);
-      const x = lerp(cx, 960 + k * 300, p), y = lerp(cy, 250 + Math.abs(k) * 46, p);
-      style(c, { left: x - 130 + "px", top: y - 70 + "px", opacity: Math.min(1, p * 1.6), transform: `rotate(${k * 5 * p}deg) scale(${lerp(0.3, 1, p)})` });
+    // 1 · float up from below, easing to a stop
+    const rise = ease.out(prog(lt, 0.4, 2.6));
+    let cx = 960, cy = lerp(1500, 540, rise), sc = 0.8, r = lerp(6, 0, rise);
+    // 2 · a playful jolt as the screen wakes
+    const j = prog(lt, 2.6, 3.5);
+    const wob = j > 0 && j < 1 ? Math.sin(j * Math.PI * 3) * (1 - j) : 0;
+    let sx = 1 + 0.07 * wob, sy = 1 - 0.06 * wob;
+    r += 4 * wob;
+    // 3 · drift right, swaying gently, while the functions come out from behind
+    const move = ease.io(prog(lt, 8.4, 10));
+    cx = lerp(cx, 1330, move); sc = lerp(sc, 0.86, move);
+    if (lt > 8.4) r += 2.6 * Math.sin(((lt - 8.4) / 4.2) * Math.PI * 2) * move;
+    // 4 · back to centre and upright for the title
+    const home = ease.io(prog(lt, LIST_T0 + 5 * EACH + 0.4, LIST_T0 + 5 * EACH + 2.6));
+    cx = lerp(cx, 960, home); cy = lerp(cy, 410, home); sc = lerp(sc, 0.62, home); r = lerp(r, 0, home);
+    style(ph.root, { left: cx - PW / 2 + "px", top: cy - PH / 2 + "px", transform: `rotate(${r}deg) scale(${sc * sx}, ${sc * sy})`, zIndex: 5 });
+    ph.dark(1 - ease.soft(prog(lt, 2.65, 2.95)));
+    glow.style.opacity = 1 - home;
+
+    // the screen follows the list
+    let from = "01-home", to = "01-home", mix = 0;
+    fns.forEach(([, , shot], i) => {
+      const t = LIST_T0 + i * EACH;
+      if (lt >= t) { from = i ? fns[i - 1][2] : "01-home"; to = shot; mix = ease.soft(prog(lt, t, t + 0.5)); }
     });
-    t1.at(lt, 4, 9.4);
-    t2.at(lt, 10.4, 17.2, 0);
-    wds.forEach((w, i) => { const p = ease.out(prog(lt, 10.6 + i * 0.5, 11.3 + i * 0.5)); w.style.opacity = p; w.style.transform = `translateY(${(1 - p) * 20}px)`; });
-    t3.at(lt, 20.6, 25.4);
-    t4.at(lt, 29.6, dur - 1.4, 0.5);
+    if (lt >= LIST_T0 + 5 * EACH + 0.4) { from = fns[4][2]; to = "01-home"; mix = ease.soft(prog(lt, LIST_T0 + 5 * EACH + 0.4, LIST_T0 + 5 * EACH + 1)); }
+    ph.show(from, to, mix);
+
+    // the burst: out on the jolt, drifting, gone before the phone moves
+    BURST.forEach((b, i) => {
+      const p = ease.out(prog(lt, 2.7 + (i % 4) * 0.03, 3.8 + (i % 4) * 0.03));
+      const drift = Math.max(0, lt - 3.8) * 10;
+      const d = b.d * p + drift;
+      const gone = 1 - ease.soft(prog(lt, 7.2, 8.4));
+      style(bits[i], { left: 960 + Math.cos(b.a) * d * 1.25 - 24 + "px", top: 540 + Math.sin(b.a) * d - 24 + "px", opacity: Math.min(1, p * 2) * gone,
+        transform: `rotate(${b.spin * p + drift}deg) scale(${lerp(0.2, b.size, p)})`, zIndex: 1 });
+    });
+
+    // the five functions slide out from behind the phone into a list
+    items.forEach((it, i) => {
+      const t = LIST_T0 + i * EACH;
+      const p = ease.out(prog(lt, t, t + 1.1));
+      const active = lt >= t && lt < t + EACH ? 1 : 0;
+      const gone = 1 - ease.soft(prog(lt, LIST_T0 + 5 * EACH + 0.2, LIST_T0 + 5 * EACH + 1));
+      style(it, { left: lerp(cx - 120, 230, p) + "px", top: 236 + i * 128 + "px", opacity: Math.min(1, p * 1.4) * gone, zIndex: 2, color: lt < t + EACH || i === 4 ? "var(--ink)" : "#c7c7cc" });
+      it.style.transform = `scale(${1 + 0.04 * active * p})`;
+    });
+
+    t1.at(lt, 4, 8.2);
+    title.at(lt, LIST_T0 + 5 * EACH + 2.2, dur - 1.4);
   };
 });
 
@@ -214,7 +262,7 @@ scene(36, (root, dur) => {
 
 function oldWay(dur, { key, kicker, title, sub, animate }) {
   scene(dur, (root) => {
-    const a = art(root, key, { x: 150, y: 175, w: 1560, h: 832 });
+    const a = art(root, key, { x: 310, y: 150, w: 1300, h: 693 });
     const k = text(root, { x: 160, y: 96, lines: [["kicker grey", kicker]] });
     const tx = text(root, { x: 960, y: 812, w: 1700, align: "center", lines: [["h2 display", title, { color: "#3a3a3c" }], ["sub", sub, { marginTop: "12px" }]] });
     return (lt) => {
@@ -227,6 +275,10 @@ function oldWay(dur, { key, kicker, title, sub, animate }) {
     };
   });
 }
+scene(3.6, (root, dur) => {
+  const tx = text(root, { x: 960, y: 470, w: 1600, align: "center", lines: [["h2 display", "Here's how it used to work.", { color: "#3a3a3c" }]] });
+  return (lt) => { root.style.opacity = fade(lt, dur, 0.5, 0.6); tx.at(lt, 0.2, dur - 0.8); };
+});
 oldWay(9.5, {
   key: "wall", kicker: "Tag look-up · the old way", title: "Rules on a wall.",
   sub: "Exceptions spread by word of mouth. A wrong guess meant retagging, or damaged product.",
@@ -293,67 +345,229 @@ scene(5.5, (root, dur) => {
 
 /* ============================ ACT 3 · before / now ============================ */
 
-function versus(dur, { key, before, now, screen, line, special }) {
+// Stroke-drawing helper: paths with pathLength="1" draw on as p goes 0 → 1.
+const drawOn = (path, p) => { path.style.strokeDasharray = "1 1"; path.style.strokeDashoffset = String(1 - p); };
+
+// Left half: an animated grey drawing of the old way, in a 1200 × 640 box.
+const BEFORE = {
+  tags: {
+    svg: () => ART.wall() + `
+      <g id="mag" fill="none" stroke="${G.ink}" stroke-width="5" stroke-linecap="round"><circle r="46" fill="rgba(255,255,255,.35)"/><line x1="34" y1="34" x2="80" y2="80" stroke-width="9"/></g>
+      <path id="trail" d="M954 106 C 1000 120, 1030 170, 1020 222" fill="none" stroke="${G.mid}" stroke-width="3" stroke-dasharray="6 8" pathLength="1"/>`,
+    play(a, lt) {
+      const m = q(a, "#mag"), sweep = ease.io(prog(lt, 0.6, 3.2));
+      m.setAttribute("transform", `translate(${lerp(240, 680, sweep)} ${150 + Math.sin(sweep * Math.PI * 3) * 40})`);
+      m.style.opacity = 1 - prog(lt, 3.2, 3.6);
+      qa(a, "#sheets > g").forEach((g) => (g.style.opacity = 1));
+      q(a, "#tagA").style.opacity = 0;
+      const tg = q(a, "#tagB"), land = ease.out(prog(lt, 3.4, 4.1)), redo = ease.io(prog(lt, 5.2, 6.2));
+      tg.setAttribute("transform", `translate(${lerp(lerp(600, 940, land), 1012, redo)} ${lerp(lerp(300, 92, land), 210, redo)})`);
+      tg.style.opacity = land;
+      pop(q(a, "#cross"), ease.out(prog(lt, 4.3, 4.8)));
+      q(a, "#cross").style.opacity *= 1 - prog(lt, 5.2, 5.5);
+      pop(q(a, "#q"), ease.out(prog(lt, 4.5, 5)));
+      drawOn(q(a, "#trail"), ease.io(prog(lt, 5.2, 6.2)));
+      q(a, "#trail").style.opacity = 1 - prog(lt, 7, 7.6);
+    },
+  },
+  audit: {
+    svg: () => ART.clipboard().replace(/<path d="/g, '<path pathLength="1" d="') + `
+      <g id="pen" transform="translate(0 0)"><path d="M0 0 l18 -6 l60 -60 l-12 -12 l-60 60 z" fill="#fff" stroke="${G.ink}" stroke-width="3" stroke-linejoin="round"/><path d="M0 0 l6 -18" stroke="${G.ink}" stroke-width="3"/></g>`,
+    play(a, lt) {
+      const marks = qa(a, "#marks path");
+      marks.forEach((p, i) => drawOn(p, ease.out(prog(lt, 0.8 + i * 0.75, 1.4 + i * 0.75))));
+      const k = clamp(Math.floor((lt - 0.8) / 0.75), 0, marks.length - 1), local = prog(lt, 0.8 + k * 0.75, 1.4 + k * 0.75);
+      const ys = [80, 116, 188, 260, 330];
+      q(a, "#pen").setAttribute("transform", `translate(${420 + 250 + local * 30} ${20 + ys[k] + 4})`);
+      q(a, "#pen").style.opacity = 1 - prog(lt, 4.6, 5);
+      const lost = ease.io(prog(lt, 5.2, 6.4));
+      q(a, "#board").style.transform = `translate(420px, ${20 + lost * 60}px) rotate(${lost * 10}deg)`;
+      q(a, "#board").style.opacity = 1 - 0.8 * lost;
+      pop(q(a, "#q"), ease.out(prog(lt, 6, 6.5)));
+    },
+  },
+  consol: {
+    svg: () => ART.consol().replace(/<path d="/g, '<path pathLength="1" d="').replace(/<ellipse /g, '<ellipse pathLength="1" ') +
+      `<text id="q" x="560" y="80" font-family="Inter Display" font-size="110" font-weight="700" fill="${G.mid}">?</text>`,
+    play(a, lt) {
+      ["#s1", "#s2", "#s3"].forEach((s, i) => {
+        const g = q(a, s);
+        qa(g, "path, ellipse").forEach((p, k) => drawOn(p, ease.out(prog(lt, 0.8 + k * 0.9 + i * 0.3, 1.4 + k * 0.9 + i * 0.3))));
+        const shake = lt > 5 ? Math.sin((lt - 5) * 9 + i) * 2 * (1 - prog(lt, 6.5, 7.5)) : 0;
+        g.style.transformBox = "fill-box"; g.style.transformOrigin = "center"; g.style.rotate = shake + "deg";
+      });
+      pop(q(a, "#q"), ease.out(prog(lt, 5.2, 5.8)));
+    },
+  },
+  board: {
+    svg: () => ART.replen().replace(/<path class="wl" d="/g, '<path class="wl" pathLength="1" d="') +
+      `<g id="mk" transform="translate(0 0)"><rect x="-8" y="-60" width="16" height="56" rx="4" fill="#fff" stroke="${G.ink}" stroke-width="3"/><path d="M-8 -4 l8 10 l8 -10" fill="${G.ink}"/></g>`,
+    play(a, lt) {
+      q(a, "#print").style.opacity = 0.35;
+      const wl = qa(a, ".wl");
+      wl.forEach((l, i) => drawOn(l, ease.io(prog(lt, 0.6 + i * 0.9, 1.4 + i * 0.9))));
+      const k = clamp(Math.floor((lt - 0.6) / 0.9), 0, 3), local = prog(lt, 0.6 + k * 0.9, 1.4 + k * 0.9);
+      q(a, "#mk").setAttribute("transform", `translate(${560 + 40 + local * (260 + k * 20)} ${60 + 130 + k * 58})`);
+      q(a, "#mk").style.opacity = 1 - prog(lt, 4.2, 4.5);
+      const w = prog(lt, 4.8, 6.4);
+      q(a, "#wipe").setAttribute("cx", lerp(-120, 640, ease.io(w)));
+      q(a, "#wipe").style.opacity = w > 0 && w < 1 ? 0.95 : 0;
+      wl.forEach((l, i) => (l.style.opacity = i === 1 || i === 2 ? 1 - 0.9 * ease.soft(prog(lt, 5.2 + i * 0.25, 6 + i * 0.25)) : 1));
+    },
+  },
+};
+
+// Right half: the real screen on an iPhone, with taps, a scan beam, and the
+// part being talked about lifted out as a magnified card.
+function nowPhone(root, { screen, x = 1250, top = 214, s = 0.7 }) {
+  const ph = phone(root);
+  ph.show(screen, screen, 0); ph.dark(0);
+  const left = x - (PW * s) / 2;
+  const at = (sx, sy) => [left + (SX + sx) * s, top + (SY + sy) * s];
+  return { ph, left, top, s, at };
+}
+function callout(root, screen, rect, k = 1.12) {
+  const c = style(el("div", "abs", `<img src="${SHOT(screen)}" style="position:absolute;width:${393 * k}px;left:${-rect.x * k}px;top:${-rect.y * k}px">`, root),
+    { width: rect.w * k + "px", height: rect.h * k + "px", overflow: "hidden", borderRadius: "18px", background: "#fff", transformOrigin: "0 0",
+      boxShadow: "0 30px 60px rgba(0,0,0,.16), 0 6px 16px rgba(0,0,0,.08)" });
+  return (p, from, to) => {
+    const e = ease.out(p);
+    style(c, { left: lerp(from[0], to[0], e) + "px", top: lerp(from[1], to[1], e) + "px", transform: `scale(${lerp(from[2] / k, 1, e)})`, opacity: Math.min(1, p * 3) });
+  };
+}
+function ripple(root) {
+  const r = style(el("div", "abs", "", root), { width: "70px", height: "70px", borderRadius: "50%", border: "4px solid var(--accent)", background: "rgba(155,74,99,.12)" });
+  return (lt, t, x, y) => {
+    const p = prog(lt, t, t + 0.7);
+    style(r, { left: x - 35 + "px", top: y - 35 + "px", opacity: p > 0 && p < 1 ? 1 - p : 0, transform: `scale(${lerp(0.3, 1.5, ease.out(p))})` });
+  };
+}
+
+function versus(dur, { before, beforeLine, now, line, build }) {
   scene(dur, (root) => {
     const left = style(el("div", "abs", "", root), { left: 0, top: 0, width: "960px", height: "1080px", background: "var(--paper)" });
-    const a = key ? art(left, key, { x: 20, y: 250, w: 920, h: 491 }) : null;
-    const cb = text(root, { x: 480, y: 96, w: 900, align: "center", lines: [["caption", "Before"], ["sub", before, { marginTop: "8px" }]] });
-    const cn = text(root, { x: 1440, y: 96, w: 900, align: "center", lines: [["caption", "Now", { color: "var(--accent)" }], ["sub", now, { marginTop: "8px" }]] });
-    const ph = phone(root);
-    ph.show(screen, screen, 0);
-    ph.dark(0);
-    const bottom = line ? text(root, { x: 960, y: 950, w: 1800, align: "center", lines: [["h3 display", line, { fontSize: "54px" }]] }) : null;
-    const sp = special ? special(root, left) : null;
+    const a = before ? art(left, null, { x: 20, y: 236, w: 920, h: 491 }, BEFORE[before].svg()) : null;
+    const cb = text(root, { x: 480, y: 84, w: 900, align: "center", lines: [["caption", "Before"], ["sub", beforeLine, { marginTop: "8px" }]] });
+    const cn = text(root, { x: 1440, y: 84, w: 900, align: "center", lines: [["caption", "Now", { color: "var(--accent)" }], ["sub", now, { marginTop: "8px" }]] });
+    const bottom = line ? text(root, { x: 960, y: 930, w: 1800, align: "center", lines: [["h3 display", line, { fontSize: "56px" }]] }) : null;
+    const play = build(root, left);
     return (lt) => {
       root.style.opacity = fade(lt, dur);
-      const li = ease.out(prog(lt, 0, 0.9));
-      left.style.transform = `translateX(${(li - 1) * 120}px)`;
-      if (a) a.style.opacity = lerp(1, 0.5, ease.soft(prog(lt, 2.6, 3.4)));
-      const pi = ease.out(prog(lt, 0.6, 1.7));
-      const s = 0.8;
-      style(ph.root, { left: 1440 - (PW * s) / 2 + "px", top: lerp(260, 200, pi) + "px", transform: `scale(${s})`, opacity: pi });
+      left.style.transform = `translateX(${(ease.out(prog(lt, 0, 0.9)) - 1) * 120}px)`;
+      if (a) { a.style.opacity = ease.soft(prog(lt, 0.2, 0.9)); BEFORE[before].play(a, lt); }
       cb.at(lt, 0.3, dur - 0.7);
-      cn.at(lt, 1, dur - 0.7);
-      if (bottom) bottom.at(lt, 2.4, dur - 0.7);
-      if (sp) sp(lt, ph);
+      cn.at(lt, 0.9, dur - 0.7);
+      if (bottom) bottom.at(lt, dur - 3.2, dur - 0.7);
+      play(lt);
     };
   });
 }
-versus(7.5, { key: "wall", before: "Rules on a wall, and word of mouth.", now: "Scan it. The tag spot is right there.", screen: "04-catalog-detail", line: "One answer, for everyone." });
-versus(7.5, { key: "clipboard", before: "Paper lists that get lost.", now: "Every count logged, with who and when.", screen: "08-counts-list", line: "Every count, on record." });
-versus(7.5, { key: "consol", before: "Three copies that never match.", now: "One list everyone shares, live.", screen: "09-consol-list", line: "One list. Always current." });
-versus(17, {
-  key: null, before: "Copy, find, tick, initial. Box by box.", now: "Paste once. Scan the boxes.", screen: "14-receiving-scan",
-  special: (root, left) => {
-    const sw = el("div", "abs", `<svg width="600" height="600" viewBox="-300 -300 600 600" overflow="visible">${ART.stopwatch()}</svg>`, left);
-    style(sw, { left: "180px", top: "260px" });
-    const lnum = style(el("div", "abs stopwatch-num", "0:00", left), { left: "180px", top: "500px", width: "600px", textAlign: "center", fontSize: "120px", color: "#636366" });
-    const rnum = style(el("div", "abs stopwatch-num", "0:00", root), { left: "1500px", top: "470px", width: "380px", textAlign: "center", fontSize: "140px", color: "var(--ink)" });
-    const units = style(el("div", "abs", "min : sec", root), { left: "1500px", top: "640px", width: "380px", textAlign: "center", fontSize: "26px", fontWeight: 500, color: "var(--ink-2)" });
-    const tx = text(root, { x: 960, y: 916, w: 1800, align: "center", lines: [["h2 display", `Same 5 boxes. <span style="color:var(--accent)">68% less time.</span>`, { fontSize: "64px" }], ["caption", "In testing · expected list + physically received", { marginTop: "14px" }]] });
-    const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
-    return (lt, ph) => {
-      // both clocks start together; 8 seconds of screen time stand for 3:25
-      const k = prog(lt, 2, 10) * 205;
-      lnum.textContent = mmss(k);
-      rnum.textContent = mmss(Math.min(k, 66));
-      const done = ease.out(prog(lt, 2 + (8 * 66) / 205, 2.6 + (8 * 66) / 205));
-      rnum.style.color = done > 0 ? "var(--accent)" : "var(--ink)";
-      rnum.style.transform = `scale(${1 + 0.08 * Math.sin(done * Math.PI)})`;
-      units.style.opacity = rnum.style.opacity = ease.soft(prog(lt, 1.2, 2));
-      style(ph.root, { left: "1010px", top: lerp(260, 200, ease.out(prog(lt, 0.6, 1.7))) + "px", transform: "scale(.74)" });
-      tx.at(lt, 10.6, 16.3, 0.5);
+const phoneIn = (n, lt) => { const p = ease.out(prog(lt, 0.6, 1.7)); style(n.ph.root, { left: n.left + "px", top: n.top + (1 - p) * 60 + "px", transform: `scale(${n.s})`, opacity: p }); };
+
+versus(9, {
+  before: "tags", beforeLine: "Rules on a wall. Guess, tag, retag.", now: "Scan it. The tag spot is right there.", line: "One answer, for everyone.",
+  build: (root) => {
+    const n = nowPhone(root, { screen: "04-catalog-detail" });
+    const r = RECTS["04-catalog-detail"], call = callout(root, "04-catalog-detail", r), tap = ripple(root);
+    return (lt) => {
+      phoneIn(n, lt);
+      const [x0, y0] = n.at(r.x, r.y);
+      tap(lt, 2.4, ...n.at(r.x + r.w / 2, r.y + r.h / 2));
+      call(prog(lt, 3, 4), [x0, y0, r.w * n.s], [1442, 470, r.w * 1.12]);
     };
   },
 });
-versus(7.5, { key: "replen", before: "A whiteboard in the back.", now: "The 86 Board, on every phone.", screen: "20-floor-86", line: "Nothing gets wiped off." });
-scene(8.5, (root, dur) => {
-  const tx = text(root, { x: 960, y: 300, w: 1800, align: "center", lines: [
-    ["caption", "In testing"],
-    ["h2 display", `~41s per box &nbsp;→&nbsp; <span style="color:var(--accent)">~13s per box</span>`, { marginTop: "22px" }],
+versus(9, {
+  before: "audit", beforeLine: "Paper lists that get lost.", now: "Every count logged, with who and when.", line: "Every count, on record.",
+  build: (root) => {
+    const n = nowPhone(root, { screen: "08-counts-list" });
+    const r = { x: 16, y: 343, w: 361, h: 82 }, call = callout(root, "08-counts-list", r, 1.08), tap = ripple(root);
+    return (lt) => {
+      phoneIn(n, lt);
+      tap(lt, 2.2, ...n.at(196, 210));
+      const [x0, y0] = n.at(r.x, r.y);
+      call(prog(lt, 3, 4), [x0, y0, r.w * n.s], [1446, 520, r.w * 1.08]);
+    };
+  },
+});
+versus(9, {
+  before: "consol", beforeLine: "Three copies that never match.", now: "One list everyone shares, live.", line: "One list. Always current.",
+  build: (root) => {
+    const r = RECTS["09-consol-list"] || { x: 16, y: 325, w: 361, h: 113 };
+    const phones = [1120, 1440, 1760].map((x) => nowPhone(root, { screen: "09-consol-list", x, top: 250, s: 0.5 }));
+    const rings = phones.map(() => style(el("div", "abs", "", root), { border: "4px solid var(--accent)", borderRadius: "12px" }));
+    const tap = ripple(root);
+    return (lt) => {
+      phones.forEach((n, i) => {
+        const p = ease.out(prog(lt, 0.6 + i * 0.15, 1.6 + i * 0.15));
+        style(n.ph.root, { left: n.left + "px", top: n.top + (1 - p) * 60 + "px", transform: `scale(${n.s})`, opacity: p });
+        const [x, y] = n.at(r.x - 4, r.y - 4);
+        const on = i === 0 ? prog(lt, 2.6, 2.9) : prog(lt, 3.1 + i * 0.25, 3.4 + i * 0.25);
+        style(rings[i], { left: x + "px", top: y + "px", width: (r.w + 8) * n.s + "px", height: (r.h + 8) * n.s + "px", opacity: on * (1 - prog(lt, 7.6, 8.2)) });
+      });
+      tap(lt, 2.4, ...phones[0].at(r.x + 150, r.y + 78));
+    };
+  },
+});
+versus(17, {
+  before: null, beforeLine: "Copy, find, tick, initial. Box by box.", now: "Paste once. Scan the boxes.",
+  build: (root, left) => {
+    const sw = el("div", "abs", `<svg width="400" height="400" viewBox="-200 -200 400 400" overflow="visible">${ART.stopwatch(128)}</svg>`, left);
+    style(sw, { left: "280px", top: "196px" });
+    const lnum = style(el("div", "abs stopwatch-num", "0:00", left), { left: "280px", top: "336px", width: "400px", textAlign: "center", fontSize: "88px", color: "#636366" });
+    const chain = el("div", "abs", `<svg viewBox="0 0 1200 640" width="760" height="405" overflow="visible">${ART.receiving()}</svg>`, left);
+    style(chain, { left: "100px", top: "540px" });
+    const lbox = style(el("div", "abs", "", left), { left: "280px", top: "540px", width: "400px", textAlign: "center", fontSize: "26px", fontWeight: 600, color: "#636366" });
+    const n = nowPhone(root, { screen: "14-receiving-scan", x: 1200, s: 0.72 });
+    const beam = style(el("div", "abs", "", root), { height: "4px", borderRadius: "2px", background: "#ff3b5c", boxShadow: "0 0 18px 4px rgba(255,59,92,.55)" });
+    const rnum = style(el("div", "abs stopwatch-num", "0:00", root), { left: "1490px", top: "420px", width: "400px", textAlign: "center", fontSize: "140px", color: "var(--ink)" });
+    const rbox = style(el("div", "abs", "", root), { left: "1490px", top: "600px", width: "400px", textAlign: "center", fontSize: "28px", fontWeight: 600, color: "var(--ink-2)" });
+    const tx = text(root, { x: 960, y: 920, w: 1800, align: "center", lines: [["h2 display", `Same 5 boxes. <span style="color:var(--accent)">68% less time.</span>`, { fontSize: "64px" }], ["caption", "In testing", { marginTop: "14px" }]] });
+    const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+    const T0 = 2, SPAN = 8; // 8 seconds of screen time stand for 3:25
+    const at = (secs) => T0 + (SPAN * secs) / 205;
+    return (lt) => {
+      phoneIn(n, lt);
+      chain.style.opacity = sw.style.opacity = ease.soft(prog(lt, 0.3, 1));
+      const k = prog(lt, T0, T0 + SPAN) * 205;
+      lnum.textContent = mmss(k);
+      rnum.textContent = mmss(Math.min(k, 66));
+      lbox.textContent = `Box ${Math.min(5, Math.floor(k / 41) + 1)} of 5`;
+      rbox.textContent = `${Math.min(5, Math.floor(k / 13.2))} of 5 boxes scanned`;
+      // the old way's steps cycle for every box
+      const step = Math.floor(((k % 41) / 41) * 5);
+      qa(chain, ".ri").forEach((g, i) => (g.style.color = lt > T0 && k < 205 && i === step ? "#1d1d1f" : G.mid));
+      // the scan beam sweeps once per box on the phone, then stops
+      const [bx, by0] = n.at(48, 250), [, by1] = n.at(48, 520);
+      const sweeping = lt > T0 && k < 66;
+      const ph = ((k % 13.2) / 13.2);
+      style(beam, { left: bx + "px", top: lerp(by0, by1, ph) + "px", width: 300 * n.s + "px", opacity: sweeping ? 1 : 0 });
+      const done = ease.out(prog(lt, at(66), at(66) + 0.6));
+      rnum.style.color = done > 0 ? "var(--accent)" : "var(--ink)";
+      rnum.style.transform = `scale(${1 + 0.08 * Math.sin(done * Math.PI)})`;
+      rnum.style.opacity = rbox.style.opacity = lbox.style.opacity = ease.soft(prog(lt, 1.2, 2));
+      tx.at(lt, T0 + SPAN + 0.6, 16.3, 0.5);
+    };
+  },
+});
+versus(9, {
+  before: "board", beforeLine: "A whiteboard in the back.", now: "The 86 Board, on every phone.", line: "Nothing gets wiped off.",
+  build: (root) => {
+    const n = nowPhone(root, { screen: "20-floor-86" });
+    const r = RECTS["20-floor-86"], call = callout(root, "20-floor-86", r, 1.12);
+    return (lt) => {
+      phoneIn(n, lt);
+      const [x0, y0] = n.at(r.x, r.y);
+      call(prog(lt, 2.8, 3.8), [x0, y0, r.w * n.s], [1442, 470, r.w * 1.12]);
+    };
+  },
+});
+scene(7, (root, dur) => {
+  const tx = text(root, { x: 960, y: 330, w: 1800, align: "center", lines: [
+    ["h2 display", `~41s per box &nbsp;→&nbsp; <span style="color:var(--accent)">~13s per box</span>`],
     ["sub", "On a 60-box shipment, that's about", { marginTop: "54px" }],
     ["h1 display", "28 minutes saved", { marginTop: "6px" }],
-    ["sub", "per store, per shipment, before counting the MAO step.", { marginTop: "14px" }],
+    ["sub", "per store, per shipment.", { marginTop: "14px" }],
   ] });
   return (lt) => { root.style.opacity = fade(lt, dur); tx.at(lt, 0.3, dur - 0.8, 0.45); };
 });
@@ -467,7 +681,7 @@ deepDive([
   { screen: "16-receiving-awaiting", focus: true, dur: 9, text: ["Receiving", "Nothing slips through.", "Boxes on the shelf but not yet in MAO stay on screen until they are. Hold all, mark them in one tap."] },
 ]);
 scene(6.5, (root, dur) => {
-  const tx = text(root, { x: 960, y: 360, w: 1800, align: "center", lines: [["caption", "In testing"], ["h1 display", `3:25 &nbsp;→&nbsp; <span style="color:var(--accent)">1:06</span>`, { marginTop: "18px", fontVariantNumeric: "tabular-nums" }], ["sub", "Same five boxes, logged as expected and physically received.", { marginTop: "20px" }]] });
+  const tx = text(root, { x: 960, y: 360, w: 1800, align: "center", lines: [["caption", "In testing"], ["h1 display", `3:25 &nbsp;→&nbsp; <span style="color:var(--accent)">1:06</span>`, { marginTop: "18px", fontVariantNumeric: "tabular-nums" }], ["sub", "Same five boxes.", { marginTop: "20px" }]] });
   return (lt) => { root.style.opacity = fade(lt, dur); tx.at(lt, 0.3, dur - 0.8, 0.35); };
 });
 
@@ -517,7 +731,7 @@ scene(16, (root, dur) => {
   const ph = phone(root);
   ph.root.style.transformOrigin = "50% 50%";
   ph.show("01-home", "01-home", 0); ph.dark(0);
-  const tx = text(root, { x: 960, y: 760, w: 1600, align: "center", lines: [["h1 display", "Oakridge Product Suite"], ["sub", "Rebuilt for the floor.", { fontSize: "38px", marginTop: "18px" }]] });
+  const tx = text(root, { x: 960, y: 760, w: 1600, align: "center", lines: [["h1 display", "Oakridge Product Suite"]] });
   return (lt) => {
     root.style.opacity = fade(lt, dur, 0.8, 2);
     const p = ease.io(prog(lt, 0, 7));
