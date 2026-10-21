@@ -484,6 +484,7 @@ function onOpen() {
     .addItem("Build for another date…", "deployMenuBuildDate")
     .addSeparator()
     .addItem("Set monthly goal…", "deployMenuSetMonthGoal")
+    .addItem("Clear today's pasted sales…", "deployMenuClearSales")
     .addSeparator()
     .addItem("Set the When I Work link…", "deployMenuSetGlobalFeed")
     .addItem("Set up deployment tabs", "deploySetup")
@@ -1283,11 +1284,54 @@ function deployHandlePaste_(sh, range) {
     const time = Utilities.formatDate(new Date(), DEPLOY.TZ, "h:mm a");
     const extra = [skipped ? `${skipped} unreadable rows skipped` : "", otherDays ? `${otherDays} from other days ignored` : ""].filter(Boolean).join(" · ");
     const msg = `${time}: ${today.length} items read. Today so far $${Math.round(day.total).toLocaleString()} from ${day.trans} sales.` + (extra ? ` (${extra})` : "");
+    const odd = deployOutsideHours_(today, deployDayPlan_(deployReadPlan_(), dayKey));
+    if (odd) {
+      const warn = `${odd} of these sales are timed outside store hours. If the times look shifted, the computer that exported them may be on the wrong time zone: use Deployment → Clear today's pasted sales, then paste an export from a computer set to Pacific time.`;
+      deployPasteStatus_(sh, "⚠ " + warn);
+      SpreadsheetApp.getUi().alert("Check the sale times", msg + "\n\n" + warn, SpreadsheetApp.getUi().ButtonSet.OK);
+      return;
+    }
     deployPasteStatus_(sh, msg);
     ss.toast(msg, "Items sold", 8);
   } finally {
     lock.releaseLock();
   }
+}
+
+// How many sale lines fall more than 30 minutes outside the day's store
+// hours: a sign the export came from a computer on another time zone.
+function deployOutsideHours_(lines, day) {
+  const open = day.hours[0] * 3600 - 1800, close = day.closeHour * 3600 + 1800;
+  return lines.filter((l) => l.secs < open || l.secs > close).length;
+}
+
+// Removes the tab's day from the Sales Log, so a bad export can be pasted
+// over cleanly.
+function deployClearDaySales_(sh, dayKey) {
+  const log = deploySalesLog_(false);
+  if (log) {
+    const keep = deployReadSalesLog_(log).filter((l) => l.day !== dayKey);
+    if (log.getLastRow() > 1) log.getRange(2, 1, log.getLastRow() - 1, 5).clearContent();
+    if (keep.length) log.getRange(2, 1, keep.length, 5).setValues(keep.map((l) => [l.day, l.secs, l.sku, l.qty, l.amount]));
+  }
+  deployApplySales_(sh, dayKey);
+  deployPasteStatus_(sh, "Today's pasted sales were cleared. Paste the export again.");
+}
+
+function deployMenuClearSales() {
+  const ui = SpreadsheetApp.getUi();
+  const sh = SpreadsheetApp.getActive().getSheetByName(DEPLOY.SHEET);
+  if (!sh) { ui.alert("There's no Deployment tab yet."); return; }
+  const dayKey = sh.getRange("B1").getNote();
+  const r = ui.alert("Clear today's pasted sales?",
+    `This removes every sale pasted for ${deployDayLabel_(dayKey)}, and empties Total, Transactions and UPT on the Hourly Tracker. ` +
+    "Use it when a wrong export was pasted (for example, from a computer on another time zone), then paste the correct one.",
+    ui.ButtonSet.OK_CANCEL);
+  if (r !== ui.Button.OK) return;
+  const lock = LockService.getDocumentLock();
+  lock.waitLock(30000);
+  try { deployClearDaySales_(sh, dayKey); } finally { lock.releaseLock(); }
+  SpreadsheetApp.getActive().toast("Cleared. Paste the correct export into the yellow cell.", "Items sold", 8);
 }
 
 /* ---------- Hourly Notes ---------- */
@@ -1443,5 +1487,5 @@ function getDeploymentForApp() {
 
 // Node test harness hook (ignored by Apps Script)
 if (typeof module !== "undefined") {
-  module.exports = { DEPLOY, DEFAULT_DEPLOY_CODES, deployParseIcs_, deployBlocksForDay_, deployBuildRoster_, deployScheduleBreaks_, deploySlotsFor_, deployBlocksFromSlots_, deployFmtTime_, deployDayLabel_, deployRequiredBreaks_, deployLocalParts_, DEPLOY_TRACKER_ROWS, deployTrackerValues_, deployWriteTracker_, deployReadTracker_, deployHourCol_, deployColLetter_, deployWriteSheet_, getDeploymentForApp, deployParseBreakTime_, deployBreaksFromSlots_, deployMoveBreaksInSlots_, deployOnEdit, deploySplitGlobalIcs_, deployBuild, deployInitials_, deployInitialsClashes_, deployWriteNotes_, deployReadNotes_, deployExpiredArchives_, deployTidyArchives_, deployParsePlan_, deployDayPlan_, deployParseItemsSold_, deployMergeSales_, deploySalesByHour_, deployHandlePaste_, deployReadPlan_, deployGoalCells_, deployPasteCol_, deployTrackerLayout_, deployFillFloorLeads_, deployApplySales_, deployMenuSetMonthGoal, deploySameWeek_, deployBreakSlotKey_, deploySyncBreaks_, deployGridRules_ };
+  module.exports = { DEPLOY, DEFAULT_DEPLOY_CODES, deployParseIcs_, deployBlocksForDay_, deployBuildRoster_, deployScheduleBreaks_, deploySlotsFor_, deployBlocksFromSlots_, deployFmtTime_, deployDayLabel_, deployRequiredBreaks_, deployLocalParts_, DEPLOY_TRACKER_ROWS, deployTrackerValues_, deployWriteTracker_, deployReadTracker_, deployHourCol_, deployColLetter_, deployWriteSheet_, getDeploymentForApp, deployParseBreakTime_, deployBreaksFromSlots_, deployMoveBreaksInSlots_, deployOnEdit, deploySplitGlobalIcs_, deployBuild, deployInitials_, deployInitialsClashes_, deployWriteNotes_, deployReadNotes_, deployExpiredArchives_, deployTidyArchives_, deployParsePlan_, deployDayPlan_, deployParseItemsSold_, deployMergeSales_, deploySalesByHour_, deployHandlePaste_, deployReadPlan_, deployGoalCells_, deployPasteCol_, deployTrackerLayout_, deployFillFloorLeads_, deployApplySales_, deployMenuSetMonthGoal, deploySameWeek_, deployBreakSlotKey_, deploySyncBreaks_, deployGridRules_, deployOutsideHours_, deployClearDaySales_ };
 }

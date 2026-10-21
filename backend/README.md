@@ -176,7 +176,14 @@ sale in the time span it covers, so either way works:
 - paste the whole day so far at any point;
 - paste everything once at close.
 
-Pasting the same sales twice never counts them twice. An hour stays blank
+Pasting the same sales twice never counts them twice.
+
+**If a wrong export was pasted** (for example, from a computer on another time
+zone, which shifts every sale into the wrong hour), choose **Deployment → Clear
+today's pasted sales…** and paste the correct export. Pasting the correct one
+over the wrong one isn't enough, because a paste only replaces the time span it
+covers. A paste with sales well outside store hours shows a warning, so a
+shifted export is caught straight away. An hour stays blank
 until the store has had a sale in it or a later hour.
 
 ## Hourly Notes
