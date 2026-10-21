@@ -56,8 +56,10 @@ const DEPLOY = {
   },
   BREAK_CODE: "B",
   // Hourly Tracker, written under the staff rows: one column per hour the
-  // store is open (from the Store hours table), plus CLOSE.
-  TRACKER: { TITLE: "Hourly Tracker" },
+  // store is open (from the Store hours table), plus CLOSE. It starts at
+  // FIRST_HOUR (8am) on every day, so pre-open employee purchases have a
+  // column of their own.
+  TRACKER: { TITLE: "Hourly Tracker", FIRST_HOUR: 8 },
   // Store hours and % of sales live on the Deployment Codes tab, from this
   // column (G), so leads can change them without touching the script.
   PLAN_COL: 7,
@@ -882,12 +884,12 @@ function deployParsePlan_(hoursRows, curveRows) {
   return { storeHours, pct };
 }
 
-// The tracker's hours for one day: every hour the store is open, with CLOSE
-// in the column after. Clipped to the grid.
+// The tracker's hours for one day: from 8am (or opening, if earlier) to
+// close, with CLOSE in the column after. Clipped to the grid.
 function deployDayPlan_(plan, dayKey) {
   const [y, m, d] = dayKey.split("-").map(Number);
   const open = plan.storeHours[new Date(Date.UTC(y, m - 1, d)).getUTCDay()] || { open: 10 * 60, close: 19 * 60 };
-  const first = Math.max(Math.floor(open.open / 60), DEPLOY.GRID_START_MIN / 60);
+  const first = Math.max(Math.min(DEPLOY.TRACKER.FIRST_HOUR, Math.floor(open.open / 60)), DEPLOY.GRID_START_MIN / 60);
   const closeHour = Math.max(first + 1, Math.min(Math.ceil(open.close / 60), DEPLOY.GRID_END_MIN / 60 - 1));
   const hours = [];
   for (let h = first; h < closeHour; h++) hours.push(h);
@@ -1286,7 +1288,7 @@ function deployHandlePaste_(sh, range) {
     const msg = `${time}: ${today.length} items read. Today so far $${Math.round(day.total).toLocaleString()} from ${day.trans} sales.` + (extra ? ` (${extra})` : "");
     const odd = deployOutsideHours_(today, deployDayPlan_(deployReadPlan_(), dayKey));
     if (odd) {
-      const warn = `${odd} of these sales are timed outside store hours. If the times look shifted, the computer that exported them may be on the wrong time zone: use Deployment → Clear today's pasted sales, then paste an export from a computer set to Pacific time.`;
+      const warn = `${odd} of these sales are timed well outside ${deployFmtTime_(DEPLOY.TRACKER.FIRST_HOUR * 60).replace("a", "am")} to close. If the times look shifted, the computer that exported them may be on the wrong time zone: use Deployment → Clear today's pasted sales, then paste an export from a computer set to Pacific time.`;
       deployPasteStatus_(sh, "⚠ " + warn);
       SpreadsheetApp.getUi().alert("Check the sale times", msg + "\n\n" + warn, SpreadsheetApp.getUi().ButtonSet.OK);
       return;
@@ -1298,8 +1300,8 @@ function deployHandlePaste_(sh, range) {
   }
 }
 
-// How many sale lines fall more than 30 minutes outside the day's store
-// hours: a sign the export came from a computer on another time zone.
+// How many sale lines fall more than 30 minutes outside the tracker's hours
+// (8am to close): a sign the export came from a computer on another time zone.
 function deployOutsideHours_(lines, day) {
   const open = day.hours[0] * 3600 - 1800, close = day.closeHour * 3600 + 1800;
   return lines.filter((l) => l.secs < open || l.secs > close).length;

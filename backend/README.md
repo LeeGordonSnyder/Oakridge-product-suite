@@ -109,15 +109,16 @@ These two small tables sit on the **Deployment Codes** tab, to the right of
 the codes:
 
 - **Store hours**: when the store opens and closes each day of the week. The
-  Hourly Tracker and Hourly Notes have one column for each open hour, then
-  **CLOSE**.
+  Hourly Tracker and Hourly Notes have one column for each hour from **8am**
+  to close, then **CLOSE**. The 8am and 9am columns catch pre-open employee
+  purchases. They use the same formulas as every other hour.
 - **% of sales**: each hour's share of the daily goal. An hour's **Sales
   Target** is Goal × its %, and the CLOSE target is the Goal.
 
 They start with the store's hours (Mon–Wed 10am–7pm, Thu–Sat 10am–9pm,
 Sun 11am–7pm) and 10 / 10 / 15 / 15 / 20 / 20 / 10 / 10 / 10% for 10am–6pm.
-7pm and 8pm have no % yet, so on the late days those hours get no target
-until you fill them in. Edit either table and the next build uses it. The table's
+8am, 9am, 7pm and 8pm have no %, so those hours get no target until you
+fill one in. Their sales still count toward the CLOSE total. Edit either table and the next build uses it. The table's
 **Total** shows what the hours add up to. As set now that's 120%, so the
 hourly targets add up to more than the Goal.
 
@@ -182,7 +183,7 @@ Pasting the same sales twice never counts them twice.
 zone, which shifts every sale into the wrong hour), choose **Deployment → Clear
 today's pasted sales…** and paste the correct export. Pasting the correct one
 over the wrong one isn't enough, because a paste only replaces the time span it
-covers. A paste with sales well outside store hours shows a warning, so a
+covers. A paste with sales well outside 8am to close shows a warning, so a
 shifted export is caught straight away. An hour stays blank
 until the store has had a sale in it or a later hour.
 
