@@ -44,11 +44,11 @@ const DEPLOY = {
   GLOBAL_FEED_PROP: "WIW_GLOBAL_FEED",
   AUTO_BUILD_HOUR: 5,
   // Break policy by shift length:
-  //   under 5h: none · 5h–under 8h: one 15 · 8h–under 8.5h: 15 + 30 · 8.5h+: 15 + 30 + 15
+  //   under 3h: none · 3h–under 5.5h: one 15 · 5.5h–8h: 15 + 30 · over 8h: 15 + 30 + 15
   BREAKS: {
-    ONE_FIFTEEN_FROM_HOURS: 5.0,
-    FIFTEEN_AND_THIRTY_FROM_HOURS: 8.0,
-    TWO_FIFTEENS_AND_THIRTY_FROM_HOURS: 8.5,
+    ONE_FIFTEEN_FROM_HOURS: 3.0,
+    FIFTEEN_AND_THIRTY_FROM_HOURS: 5.5,
+    TWO_FIFTEENS_AND_THIRTY_OVER_HOURS: 8.0, // strictly over: an 8h shift gets 15 + 30
     EDGE_BUFFER_MIN: 30, // no breaks in the first/last 30 min of a shift
     STEP_MIN: 15, // breaks land on the 15-minute grid
     MIN_ON_FLOOR: 2, // never fewer than 2 people working
@@ -271,7 +271,7 @@ function deployBlocksForDay_(events, dayKey, codes) {
 
 function deployRequiredBreaks_(hours) {
   const B = DEPLOY.BREAKS;
-  if (hours >= B.TWO_FIFTEENS_AND_THIRTY_FROM_HOURS) return [15, 30, 15];
+  if (hours > B.TWO_FIFTEENS_AND_THIRTY_OVER_HOURS) return [15, 30, 15];
   if (hours >= B.FIFTEEN_AND_THIRTY_FROM_HOURS) return [15, 30];
   if (hours >= B.ONE_FIFTEEN_FROM_HOURS) return [15];
   return [];

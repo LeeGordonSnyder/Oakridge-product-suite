@@ -78,10 +78,10 @@ working exactly as before.
 
   | Shift length | Breaks |
   |---|---|
-  | under 5h | none |
-  | 5h to under 8h | one 15 |
-  | 8h to under 8.5h | a 15 and a 30 |
-  | 8.5h or more | two 15s and a 30 |
+  | under 3h | none |
+  | 3h to under 5.5h | one 15 |
+  | 5.5h to 8h | a 15 and a 30 |
+  | over 8h | two 15s and a 30 |
 
   No break falls in the first or last 30 minutes of a shift. At least two
   people stay on the floor, and at least one Floor Lead whenever one is
