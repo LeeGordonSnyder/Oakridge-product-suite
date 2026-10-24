@@ -88,6 +88,7 @@ function initialLoad() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  carryOverOriginalAppWork();
   initScannerModal();
   initChangeUser();
   initSettings();

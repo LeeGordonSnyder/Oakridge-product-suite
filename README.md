@@ -42,6 +42,25 @@ don't have to redeploy anything:
 - **Feedback is tagged.** Feedback sent from v2 is prefixed `[v2]` in the
   Feedback sheet.
 
+## Replacing the original app
+
+The store phones get v2 when these files are published at the original app's
+address (`Audit-project`, branch `claude/arctteryx-tag-lookup-app-anuv34`).
+Same address, so nothing changes on the phones:
+
+- The home-screen icon stays. The original app shows its **"A new version is
+  ready"** banner. Tap **Reload** and v2 opens.
+- The access key and roster are picked up from the original app, so nobody
+  re-enters anything. Each person picks their initials once.
+- **Work staged on the phone carries over once:** counts not yet saved to the
+  sheet, and anything held in Consolidations, Receiving, Check Floor or Replen.
+  It shows up on Home to finish. The original app's data is left untouched, so
+  rolling back loses nothing. This only happens at the `/Audit-project/`
+  address, never when v2 runs side by side.
+- **Rolling back:** the original app's last version is tagged
+  `original-app-final` in the Audit-project repo. Restore those files on the
+  branch and the phones go back the same way.
+
 ## Deploying (GitHub Pages)
 
 1. **Settings → Pages → Build and deployment → Deploy from a branch**, then

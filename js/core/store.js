@@ -86,6 +86,49 @@ function saveString(key, value) {
   }
 }
 
+/* ---------- Taking over from the original app ----------
+   When this app is served at the original app's address (/Audit-project/),
+   it replaces it on the store phones. Work the original app had staged on
+   the phone but not yet sent to the sheet is carried over once: unsaved
+   counts and the Consolidations, Receiving, Check Floor and Replen holding
+   lists. Everything else comes from the sheet. The original keys are left
+   in place, so going back to the original app loses nothing. Served
+   anywhere else (side by side), it never runs, so the same work can't be
+   sent twice. */
+const LEGACY_WORK = [
+  [STORE.auditLog, "audit.auditEntries.v1"],
+  [STORE.consolHolding, "audit.consolHolding.v1"],
+  [STORE.receivingHolding, "audit.receivingHolding.v1"],
+  [STORE.checkFloorHolding, "audit.checkFloorHolding.v1"],
+  [STORE.replenHolding, "audit.replenHolding.v1"],
+];
+const CARRIED_OVER_KEY = "ops2.carriedOver";
+
+function carryOverOriginalAppWork() {
+  if (!/\/audit-project\//i.test(location.pathname)) return 0;
+  try {
+    if (localStorage.getItem(CARRIED_OVER_KEY)) return 0;
+  } catch (e) {
+    return 0;
+  }
+  let moved = 0;
+  for (const [key, legacyKey] of LEGACY_WORK) {
+    let old = loadJSON(legacyKey, []);
+    if (!Array.isArray(old)) continue;
+    if (key === STORE.auditLog) old = old.filter((e) => e && !e.synced);
+    if (!old.length) continue;
+    const mine = loadJSON(key, []);
+    const have = new Set(mine.map((e) => JSON.stringify(e)));
+    const ids = new Set(mine.map((e) => e && e.id).filter(Boolean));
+    const add = old.filter((e) => !(e && e.id && ids.has(e.id)) && !have.has(JSON.stringify(e)));
+    if (!add.length) continue;
+    saveJSON(key, key === STORE.auditLog ? add.concat(mine) : mine.concat(add));
+    moved += add.length;
+  }
+  saveString(CARRIED_OVER_KEY, new Date().toISOString());
+  return moved;
+}
+
 function currentInitials() {
   return (loadJSON(STORE.session, {}).initials || "").trim();
 }

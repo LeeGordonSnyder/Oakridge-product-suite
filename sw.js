@@ -1,6 +1,6 @@
 // Bump CACHE_VERSION on every shipped change (and the header version in index.html).
 const CACHE_PREFIX = "ops2-";
-const CACHE_VERSION = 9;
+const CACHE_VERSION = 10;
 const CACHE_NAME = `${CACHE_PREFIX}v${CACHE_VERSION}`;
 
 const CORE_ASSETS = [
@@ -33,7 +33,12 @@ const CORE_ASSETS = [
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(CORE_ASSETS)).then(() => self.skipWaiting())
+    // "reload" skips the browser's HTTP cache, so an update never caches a
+    // stale copy of a file next to fresh ones.
+    caches
+      .open(CACHE_NAME)
+      .then((cache) => cache.addAll(CORE_ASSETS.map((url) => new Request(url, { cache: "reload" }))))
+      .then(() => self.skipWaiting())
   );
 });
 
